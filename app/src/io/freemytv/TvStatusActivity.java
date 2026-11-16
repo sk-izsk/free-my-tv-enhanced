@@ -38,12 +38,14 @@ import java.util.concurrent.Executors;
  * after the "TV Status" screen of Weatherglass TV (github.com/faizaldjoo/weatherglass-tv, MIT; the idea and layout,
  * no code). Memory, storage, CPU (sampled through the TV's own ADB every few seconds while open), how long the TV has
  * been up and its network; and four actions, all through the TV's ADB: Free memory (am kill-all: background processes
- * only), Clear caches (pm trim-caches), Restart home screen, Reboot TV (OK twice). Opened from the drawer's shortcut
- * or a top button (HomeApps). Back closes it. Nothing here may throw into :home (its watchdog counts crashes).
+ * only), Clear caches (pm trim-caches), Restart home screen, Reboot TV (OK twice); and the Performance mode switch.
+ * Opened from the drawer's shortcut, a top button (HomeApps) or a remote button over any app (RemoteKeys). Back closes it. Nothing here may throw into :home (its watchdog counts crashes).
  */
 public class TvStatusActivity extends Activity {
     private static final float W = 660, H = 1000, MARGIN = 40;
-    private static final String[] ACTIONS = {"Free memory", "Clear caches", "Restart home screen", "Reboot TV"};
+    private static final String[] ACTIONS = {"Free memory", "Clear caches", "Restart home screen", "Reboot TV", "Performance mode"};
+    /** The last action is the Performance mode switch, as wide as the panel. */
+    private static final int PERF = 4;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -203,6 +205,16 @@ public class TvStatusActivity extends Activity {
 
     private void act(int i) {
         if (busy) return;
+        if (i == PERF) {   // the home screen behind reads Ui.lite as it draws
+            boolean on = !Prefs.performance();
+            Prefs.setPerformance(on);
+            Ui.lite = on;
+            rebootArmed = false;
+            message = on ? "Performance mode on: flat panels, no shadows." : "Performance mode off: glass is back.";
+            click.open();
+            view.invalidate();
+            return;
+        }
         if (i == 3 && !rebootArmed) {
             rebootArmed = true;
             message = "Press OK again to reboot the TV.";
@@ -275,7 +287,11 @@ public class TvStatusActivity extends Activity {
                 int c = e.getKeyCode();
                 int next = focus + (c == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : c == KeyEvent.KEYCODE_DPAD_RIGHT ? 1
                         : c == KeyEvent.KEYCODE_DPAD_UP ? -2 : 2);
+                // The wide switch: down from either button of the row above, up back to the left one.
+                if (c == KeyEvent.KEYCODE_DPAD_DOWN && focus >= PERF - 2 && focus < PERF) next = PERF;
+                if (c == KeyEvent.KEYCODE_DPAD_UP && focus == PERF) next = PERF - 2;
                 boolean sameRow = c == KeyEvent.KEYCODE_DPAD_UP || c == KeyEvent.KEYCODE_DPAD_DOWN || next / 2 == focus / 2;
+                if (focus == PERF && (c == KeyEvent.KEYCODE_DPAD_LEFT || c == KeyEvent.KEYCODE_DPAD_RIGHT)) sameRow = false;
                 if (next >= 0 && next < ACTIONS.length && sameRow) {
                     focus = next;
                     if (rebootArmed) {
@@ -306,7 +322,7 @@ public class TvStatusActivity extends Activity {
     // MARK: - Drawing
 
     private final class PanelView extends View {
-        private static final float PAD = 44, ROW = 100, BAR_H = 8, BTN_H = 84, GAP = 14;
+        private static final float PAD = 44, ROW = 90, BAR_H = 8, BTN_H = 84, GAP = 14;
         private final float k;
         private final boolean night;
         private final int ink, soft;
@@ -375,7 +391,7 @@ public class TvStatusActivity extends Activity {
             y += 18 * k;
             for (int i = 0; i < ACTIONS.length; i++) {
                 float bx = x + (i % 2) * (bw + GAP * k), by = y + (i / 2) * (BTN_H + GAP) * k;
-                r.set(bx, by, bx + bw, by + BTN_H * k);
+                r.set(bx, by, i == PERF ? right : bx + bw, by + BTN_H * k);
                 boolean f = i == focus;
                 int danger = i == 3 ? 0xFFFF453A : 0;
                 fill.setColor(f ? (danger != 0 && rebootArmed ? danger : night ? 0xFFFFFFFF : 0xFF1D1D1F)
@@ -383,9 +399,10 @@ public class TvStatusActivity extends Activity {
                 c.drawRoundRect(r, 28 * k, 28 * k, fill);
                 btn.setColor(f ? (danger != 0 && rebootArmed ? 0xFFFFFFFF : night ? 0xFF1D1D1F : 0xFFFFFFFF)
                         : danger != 0 ? danger : ink);
-                c.drawText(ACTIONS[i], r.centerX(), r.centerY() + Ui.halfCap(btn), btn);
+                String text = i == PERF ? ACTIONS[i] + ": " + (Prefs.performance() ? "On" : "Off") : ACTIONS[i];
+                c.drawText(text, r.centerX(), r.centerY() + Ui.halfCap(btn), btn);
             }
-            y += 2 * (BTN_H + GAP) * k + 30 * k;
+            y += 3 * (BTN_H + GAP) * k + 30 * k;
             if (!message.isEmpty()) c.drawText(message, w / 2, y, msg);
         }
 

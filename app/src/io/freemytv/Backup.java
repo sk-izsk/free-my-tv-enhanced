@@ -34,10 +34,12 @@ import java.util.Set;
  *            adb shell content call --uri content://io.freemytv.backup --method apply
  *
  * apply replaces every setting with the file's and restarts the home screen (its process ends; Home brings it back).
- * The JSON is {key: {"t": s|i|l|b|f|set, "v": value}}.
+ * The JSON is {key: {"t": s|i|l|b|f|set, "v": value}}; the remote buttons' file (Prefs.keysText, read by :keys) rides
+ * along as {"#remote-keys": {"t": "keys", "v": its text}}.
  */
 public class Backup extends ContentProvider {
     private static final int SHELL_UID = 2000;
+    private static final String KEYS = "#remote-keys";
 
     @Override public boolean onCreate() {
         return true;
@@ -72,6 +74,8 @@ public class Backup extends ContentProvider {
                 else continue;
                 out.put(e.getKey(), one);
             }
+            String keys = Prefs.keysText();
+            if (!keys.isEmpty()) out.put(KEYS, new JSONObject().put("t", "keys").put("v", keys));
         } catch (Exception ex) {
             AppLog.w("backup export: " + ex.getMessage());
         }
@@ -107,6 +111,7 @@ public class Backup extends ContentProvider {
                     case "l": ed.putLong(key, one.getLong("v")); break;
                     case "b": ed.putBoolean(key, one.getBoolean("v")); break;
                     case "f": ed.putFloat(key, (float) one.getDouble("v")); break;
+                    case "keys": Prefs.setKeysText(one.getString("v")); break;
                     case "set": {
                         Set<String> set = new HashSet<>();
                         JSONArray a = one.getJSONArray("v");

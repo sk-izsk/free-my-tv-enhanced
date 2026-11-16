@@ -176,6 +176,7 @@ public class SettingsActivity extends Activity {
         private boolean editingInputs;   // the editor edits the drawer's inputs instead of the shelf or top buttons
         private boolean editingOpenWith;   // [custom] the editor edits the apps picks open in (OpenWith)
         private boolean editingGenres;     // [custom] the editor edits Your taste's genres (Taste)
+        private boolean editingShortcuts;  // [custom] the editor edits the drawer's shortcuts (Home Settings > Shortcuts)
         private boolean genreRowsMode;     // [custom] … or, with it, the genre rows under the shelf (GenreRows, at most 3)
         private static final String FORGET_ROW = "#forget";   // [custom] Your taste: forget the loved and Not for me titles
         /** The shelf editor's first row: the order set here or the last one opened first (Prefs.shelfRecent). */
@@ -389,6 +390,10 @@ public class SettingsActivity extends Activity {
                     if (editingInputs) {
                         return app[1] + ", " + (place >= 0 ? Ui.trf("in the inputs, place {n}", "n", place + 1)
                                 : Ui.tr("not in the inputs"));
+                    }
+                    if (editingShortcuts) {   // [custom]
+                        return app[1] + ", " + (place >= 0 ? Ui.trf("in the drawer, place {n}", "n", place + 1)
+                                : Ui.tr("not in the drawer"));
                     }
                     if (editingOpenWith) {   // [custom]
                         return app[1] + ", " + (place >= 0 ? Ui.trf("offered, place {n}", "n", place + 1) : Ui.tr("not offered"));
@@ -720,6 +725,8 @@ public class SettingsActivity extends Activity {
                 c.drawText(TextUtils.ellipsize(line, notice, 790 * k, TextUtils.TruncateAt.END).toString(), x, y + 42 * k, notice);
                 return y + 82 * k;
             }
+            // [custom] the longer name pushes the Original column left, so the two headers don't overlap
+            colA = Math.min(colA, colB - cellValue.measureText("Free My TV Enhanced") - 50 * k);
             cellValue.setColor(0x73FFFFFF);
             c.drawText(Ui.tr("Original"), colA, y, cellValue);
             c.drawText("Free My TV Enhanced", colB, y, cellValue);
@@ -805,7 +812,8 @@ public class SettingsActivity extends Activity {
 
         private static String versionName(Context c) {
             try {
-                return "Free My TV Enhanced " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;   // [custom] the name
+                return "Free My TV Enhanced " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName
+                        + " · " + Ui.trf("based on Free My TV {version}", "version", Updates.BASED_ON);   // [custom] the name, our numbers
             } catch (android.content.pm.PackageManager.NameNotFoundException e) {
                 return "Free My TV Enhanced";
             }
@@ -959,6 +967,9 @@ public class SettingsActivity extends Activity {
                                 screen = REMOTE_KEYS;
                             } else if (screen == TMDB_KEY) {
                                 closeKeyScreen();
+                            } else if (screen == SHELF_EDIT && editingShortcuts) {   // [custom] back to its row
+                                editingShortcuts = false;
+                                showSettingsRow(shortcutsRow());
                             } else if (screen == SHELF_EDIT && (editingOpenWith || editingGenres)) {   // [custom] back to its row
                                 focus = cardFocusRow() + (editingGenres ? (genreRowsMode ? 6 : 5) : 2);
                                 editingOpenWith = editingGenres = false;
@@ -1043,6 +1054,8 @@ public class SettingsActivity extends Activity {
             l.add("Ethereum");
             l.add("Solana");
             if (dollar()) l.add(Ui.tr("Dollar"));
+            l.add(Ui.tr("Shortcuts"));          // [custom] shortcutsRow()
+            l.add(Ui.tr("TV Status button"));   // [custom] statusKeyRow()
             l.add(Ui.tr("TMDB key"));
             l.add(Ui.tr("Watchmode key"));
             l.add(Ui.tr("Updates"));
@@ -1060,6 +1073,37 @@ public class SettingsActivity extends Activity {
 
         private int watchmodeRow() {
             return updatesRow() - 1;
+        }
+
+        // [custom] Two rows of the owner's before the keys (ENHANCED.md): the drawer's shortcuts, TV Status's button.
+        private int shortcutsRow() {
+            return keyRow() - 2;
+        }
+
+        private int statusKeyRow() {
+            return keyRow() - 1;
+        }
+
+        /** TV Status's button: Off, then each remote button this TV has (not on Xiaomi, whose presses come in bursts). */
+        private int[] statusKeyChoices() {
+            if (RemoteKeys.XIAOMI || !RemoteKeys.supported() || !RemoteKeys.FILTER_SAFE) return new int[] {0};
+            int[] out = new int[Prefs.KEYS.length + 1];
+            System.arraycopy(Prefs.KEYS, 0, out, 1, Prefs.KEYS.length);
+            return out;
+        }
+
+        private String statusKeyValue() {
+            int key = Prefs.statusKey();
+            String[] names = keyLabels();
+            for (int i = 0; i < Prefs.KEYS.length && i < names.length; i++) {
+                if (Prefs.KEYS[i] == key) return Ui.trf("{button} twice", "button", names[i]);
+            }
+            return Ui.tr("Off");
+        }
+
+        private String shortcutsValue() {
+            int all = HomeApps.shortcutCandidates(getContext()).size(), shown = HomeApps.drawerShortcuts(getContext()).size();
+            return shown == all ? Ui.tr("services|All") : Ui.trf("{n} of {all}", "n", shown, "all", all);
         }
 
         /** A key's row: "Not set", or the key's last 4 characters (all that's ever shown of it). */
@@ -1117,6 +1161,7 @@ public class SettingsActivity extends Activity {
             editingTop = false;
             editingInputs = false;
             editingOpenWith = false;
+            editingShortcuts = false;
             editingGenres = true;
             genreRowsMode = forRows;
             shelfOrder.clear();
@@ -1141,6 +1186,7 @@ public class SettingsActivity extends Activity {
             editingTop = false;
             editingInputs = false;
             editingGenres = false;
+            editingShortcuts = false;
             editingOpenWith = true;
             List<String[]> candidates = OpenWith.candidates(getContext());
             shelfOrder.clear();
@@ -1224,7 +1270,9 @@ public class SettingsActivity extends Activity {
             if (HOME_ROW >= 0) v[HOME_ROW] = onOff(HomeAssistant.on(getContext()));
             v[QUOTES_ROW] = onOff(Prefs.quotes());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
-            for (int i = COIN_ROWS; i < v.length - 3; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
+            for (int i = COIN_ROWS; i < v.length - 5; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));   // [custom] 5: our two rows
+            v[v.length - 5] = shortcutsValue();   // [custom]
+            v[v.length - 4] = statusKeyValue();   // [custom]
             v[v.length - 3] = keyValue(Recs.key());
             v[v.length - 2] = keyValue(Recs.watchmodeKey());
             v[v.length - 1] = updatesValue();
@@ -1296,7 +1344,7 @@ public class SettingsActivity extends Activity {
                 whyScroll = pickScroll;
                 for (int r = 0; r < n; r++) {
                     String need = need(r);
-                    whyRows[r] = screen == HOME_SETTINGS && pickScroll + r >= COIN_ROWS && pickScroll + r < keyRow() && !Prefs.quotes()
+                    whyRows[r] = screen == HOME_SETTINGS && pickScroll + r >= COIN_ROWS && pickScroll + r < shortcutsRow() && !Prefs.quotes()
                             ? Ui.tr("Turn on the Quotes widget to pick its coins.")
                             : need == null ? null : Capabilities.missing(getContext(), need);
                 }
@@ -1506,6 +1554,8 @@ public class SettingsActivity extends Activity {
                 appPkgs.add(Prefs.ALL_APPS);
                 appLabels.add(Ui.tr("All Apps"));
             }
+            appPkgs.add(Prefs.TV_STATUS);   // [custom] TV Status over whatever is on screen
+            appLabels.add(Ui.tr("TV Status"));
             for (String[] f : found) {
                 appPkgs.add(f[0]);
                 appLabels.add(f[1]);
@@ -1641,6 +1691,15 @@ public class SettingsActivity extends Activity {
                     return;
                 case QUOTES_ROW: Prefs.setQuotes(!Prefs.quotes()); break;
                 default:
+                    if (row == statusKeyRow()) {   // [custom] Off, then each remote button
+                        int[] keys = statusKeyChoices();
+                        int at = 0;
+                        for (int i = 0; i < keys.length; i++) if (keys[i] == Prefs.statusKey()) at = i;
+                        Prefs.setStatusKey(keys[(at + dir + keys.length) % keys.length]);
+                        HomeMode.ensureRemoteService(getContext(), 3_000);
+                        return;
+                    }
+                    if (row == shortcutsRow()) return;   // [custom] its own list (OK)
                     if (row >= keyRow() || !Prefs.quotes()) return;   // the keys and Updates act on OK only
                     Prefs.setCoin(row - COIN_ROWS, !Prefs.coin(row - COIN_ROWS));
                     break;
@@ -2243,7 +2302,7 @@ public class SettingsActivity extends Activity {
         private void openShelfEditor(boolean top) {
             editingTop = top;
             editingInputs = false;
-            editingOpenWith = editingGenres = false;   // [custom]
+            editingOpenWith = editingGenres = editingShortcuts = false;   // [custom]
             shelfOrder.clear();
             if (top) {
                 shelfOrder.addAll(HomeApps.topButtonKeys());
@@ -2263,7 +2322,7 @@ public class SettingsActivity extends Activity {
         private void openInputsEditor() {
             editingTop = false;
             editingInputs = true;
-            editingOpenWith = editingGenres = false;   // [custom]
+            editingOpenWith = editingGenres = editingShortcuts = false;   // [custom]
             shelfOrder.clear();
             for (HomeApps.Item it : HomeApps.orderedInputs(getContext())) shelfOrder.add(it.key);
             rebuildShelfRows(HomeApps.inputCandidates(getContext()));
@@ -2272,10 +2331,34 @@ public class SettingsActivity extends Activity {
             screen = SHELF_EDIT;
         }
 
+        /** [custom] Home Settings > Shortcuts: which of the drawer's shortcuts show, and their order. */
+        private void openShortcutsEditor() {
+            editingTop = editingInputs = editingOpenWith = editingGenres = false;
+            editingShortcuts = true;
+            shelfOrder.clear();
+            for (HomeApps.Item it : HomeApps.drawerShortcuts(getContext())) shelfOrder.add(it.key);
+            rebuildShelfRows(HomeApps.shortcutCandidates(getContext()));
+            pickScroll = 0;
+            focus = 0;
+            screen = SHELF_EDIT;
+        }
+
+        /** [custom] As saveInputsOrder: the shown ones in order, the rest hidden. */
+        private void saveShortcuts() {
+            List<String> saved = Prefs.shortcutsOrder();
+            Prefs.setShortcutsOrder(VisibleOrder.replace(saved == null ? shelfOrder : saved, shelfOrder));
+            List<String> hidden = new ArrayList<>(Prefs.shortcutsHidden());
+            hidden.removeAll(shelfOrder);
+            for (String[] row : shelfRows) {
+                if (!shelfOrder.contains(row[0]) && !hidden.contains(row[0])) hidden.add(row[0]);
+            }
+            Prefs.setShortcutsHidden(hidden);
+        }
+
         /** The order row (shelf only), then selected apps, in shelf order, then the rest in the order they came. */
         private void rebuildShelfRows(List<String[]> candidates) {
             shelfRows.clear();
-            if (!editingTop && !editingInputs && !editingOpenWith && !editingGenres) shelfRows.add(new String[] {ORDER_ROW, Ui.tr("Shelf order")});   // [custom] not for Open with, genres
+            if (!editingTop && !editingInputs && !editingOpenWith && !editingGenres && !editingShortcuts) shelfRows.add(new String[] {ORDER_ROW, Ui.tr("Shelf order")});   // [custom] not for Open with, genres
             for (String pkg : shelfOrder) {
                 for (String[] cand : candidates) if (cand[0].equals(pkg)) { shelfRows.add(cand); break; }
             }
@@ -2291,7 +2374,7 @@ public class SettingsActivity extends Activity {
 
         /** The shelf puts the last app opened first, so the places set here don't apply (and can't be changed). */
         private boolean shelfOrderLocked() {
-            return !editingTop && !editingInputs && !editingOpenWith && !editingGenres && Prefs.shelfRecent();   // [custom]
+            return !editingTop && !editingInputs && !editingOpenWith && !editingGenres && !editingShortcuts && Prefs.shelfRecent();   // [custom]
         }
 
         /** "My order" deletes the list of apps opened: nothing is kept while the shelf doesn't use it. */
@@ -2319,6 +2402,7 @@ public class SettingsActivity extends Activity {
             }
             if (editingTop) Prefs.setTopButtons(shelfOrder);
             else if (editingInputs) saveInputsOrder();
+            else if (editingShortcuts) saveShortcuts();   // [custom]
             else if (editingOpenWith) Prefs.setOpenWith(shelfOrder);   // [custom]
             else if (editingGenres && genreRowsMode) Prefs.setGenreRows(shelfOrder);   // [custom]
             else if (editingGenres) Prefs.setTasteGenres(shelfOrder);   // [custom]
@@ -2351,9 +2435,13 @@ public class SettingsActivity extends Activity {
                 if (pickScroll + focus >= shelfRows.size()) focus = Math.max(0, shelfRows.size() - 1 - pickScroll);
                 return;
             }
+            if (editingShortcuts && pkg.equals(HomeApps.SHORTCUT_SETTINGS)) {   // [custom] the way back here stays
+                Toast.makeText(getContext(), Ui.tr("Home Settings always stays in the drawer."), Toast.LENGTH_SHORT).show();
+                return;
+            }
             if (shelfOrder.contains(pkg)) shelfOrder.remove(pkg);
             else if (editingGenres && genreRowsMode && shelfOrder.size() >= GenreRows.MAX_ROWS) return;   // [custom] three rows at most
-            else if (editingTop || editingInputs || editingOpenWith || editingGenres || shelfOrder.size() < HomeApps.maxShelf(getContext())) shelfOrder.add(pkg);   // [custom] editingOpenWith, editingGenres
+            else if (editingTop || editingInputs || editingOpenWith || editingGenres || editingShortcuts || shelfOrder.size() < HomeApps.maxShelf(getContext())) shelfOrder.add(pkg);   // [custom] editingOpenWith, editingGenres
             else return;
             refreshShelfRows(pkg);
         }
@@ -2376,7 +2464,7 @@ public class SettingsActivity extends Activity {
 
         private void drawShelfEditor(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
-            c.drawText(editingTop ? Ui.tr("Top Buttons") : editingInputs ? Ui.tr("Inputs") : editingOpenWith ? Ui.tr("Open picks with")
+            c.drawText(editingTop ? Ui.tr("Top Buttons") : editingInputs ? Ui.tr("Inputs") : editingShortcuts ? Ui.tr("Shortcuts") : editingOpenWith ? Ui.tr("Open picks with")
                     : editingGenres ? (genreRowsMode ? Ui.tr("Genre rows") : Ui.tr("Your taste")) : Ui.tr("Shelf"),   // [custom] Open picks with, Your taste, Genre rows
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             int rows = rowCount();
@@ -2414,12 +2502,13 @@ public class SettingsActivity extends Activity {
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
             float hy = (LIST_TOP + 20 + rows * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
-            if (!editingTop && !editingInputs && !editingOpenWith && !editingGenres && HomeApps.lowRam(getContext())) {   // [custom]
+            if (!editingTop && !editingInputs && !editingOpenWith && !editingGenres && !editingShortcuts && HomeApps.lowRam(getContext())) {   // [custom]
                 c.drawText(Ui.tr("This TV has little memory, so the shelf holds fewer apps."), LIST_X * k + 30 * k, hy + 38 * k, hint);
             }
             int max = HomeApps.maxShelf(getContext());
             c.drawText(editingTop ? Ui.tr("OK adds or removes a button. ← → change the order.")
                     : editingInputs ? Ui.tr("OK shows or hides an input. ← → change the order.")
+                    : editingShortcuts ? Ui.tr("OK shows or hides a shortcut. ← → change the order.")   // [custom]
                     : editingOpenWith ? Ui.tr("OK adds or removes an app. ← → change the order.")   // [custom]
                     : editingGenres && genreRowsMode ? Ui.tr("OK adds a row under the shelf (up to 3). ← → change the order.")   // [custom]
                     : editingGenres ? Ui.tr("OK picks the genres you like. Hold OK on a pick: Love it or Not for me.")   // [custom]
@@ -2577,6 +2666,8 @@ public class SettingsActivity extends Activity {
                     : screen == HOME_SETTINGS && from + focus == POWER_ON_ROW && unavailable(focus) == null
                     ? Ui.tr("Only after a full start, not from standby.")
                     : screen == HOME_SETTINGS && (from + focus == keyRow() || from + focus == watchmodeRow()) ? Ui.tr("OK: send it from your phone, or type it.")
+                    : screen == HOME_SETTINGS && from + focus == statusKeyRow() ? Ui.tr("Press that button twice quickly: TV Status opens over any app.")   // [custom]
+                    : screen == HOME_SETTINGS && from + focus == shortcutsRow() ? Ui.tr("OK picks which shortcuts the drawer shows.")   // [custom]
                     : screen == HOME_SETTINGS && from + focus == updatesRow() ? (Updates.ready(updates, installed)
                     ? Ui.tr("OK installs it; Android asks first.") : Ui.tr("OK checks for a new version."))
                     : Ui.tr("OK or the arrows change the value.")), LIST_X * k + 30 * k, hy, hint);
@@ -2660,6 +2751,8 @@ public class SettingsActivity extends Activity {
             } else if (screen == HOME_SETTINGS && pickScroll + focus == updatesRow()) {
                 updateNow();
                 return;
+            } else if (screen == HOME_SETTINGS && pickScroll + focus == shortcutsRow()) {   // [custom]
+                openShortcutsEditor();
             } else if (screen == HOME_SETTINGS && (pickScroll + focus == keyRow() || pickScroll + focus == watchmodeRow())) {
                 openKeyScreen(pickScroll + focus == watchmodeRow());
             } else if (screen == TMDB_KEY) {

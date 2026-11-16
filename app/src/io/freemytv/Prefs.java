@@ -101,6 +101,8 @@ final class Prefs {
             KEY_ONN_FREE_TV = 297;
     /** A button's value that opens this home screen's All Apps. */
     static final String ALL_APPS = HomeMode.PKG + "#all";
+    /** [custom] A remote button's choice: TV Status, over whatever is on screen. */
+    static final String TV_STATUS = HomeMode.PKG + "#status";
     /**
      * The JVC G24's (Skyworth) Inputs button, one key here whichever way it comes (BUTTON_16 with scan code 383 or 79,
      * or BUTTON_14 with 240: SkyworthRemote.shortcut), and its gear, NOTIFICATION; TV_SHORTCUTS and QUICK_SETTINGS
@@ -660,12 +662,21 @@ final class Prefs {
             long stamp = f.lastModified() * 31 + f.length();   // 0 without the file: every key opens its default
             if (stamp != keysStamp) {
                 keysStamp = stamp;
+                statusKey = 0;   // [custom]
                 java.util.Arrays.fill(keyApps, null);
                 keysAllOff = false;
                 if (stamp != 0) {
+                    statusKey = 0;
                     try (BufferedReader r = new BufferedReader(new FileReader(f))) {
                         String line;
                         while ((line = r.readLine()) != null) {
+                            if (line.startsWith(STATUS_PREFIX)) {   // [custom] TV Status's button
+                                try {
+                                    statusKey = Integer.parseInt(line.substring(STATUS_PREFIX.length()).trim());
+                                } catch (NumberFormatException ignored) {
+                                }
+                                continue;
+                            }
                             for (int i = 0; i < KEYS.length; i++) {
                                 String prefix = KEYS[i] + "=";
                                 if (line.startsWith(prefix)) keyApps[i] = line.substring(prefix.length());
@@ -686,7 +697,68 @@ final class Prefs {
     static void setKeyApp(int keyCode, String pkg) {
         StringBuilder sb = new StringBuilder();
         for (int key : KEYS) sb.append(key).append('=').append(key == keyCode ? pkg : keyApp(key)).append('\n');
+        if (statusKey() != 0) sb.append(STATUS_PREFIX).append(statusKey()).append('\n');   // [custom]
         if (writeKeys(sb.toString())) version++;
+    }
+
+    // [custom] TV Status's button (Home Settings > TV Status button): two quick presses of this remote button open TV
+    // Status over whatever is on screen (RemoteKeys). In the keys file, since the key service (:keys) reads it.
+    private static final String STATUS_PREFIX = "status=";
+    private static int statusKey;
+
+    /** The remote button (one of KEYS) whose double press opens TV Status; 0 for none. */
+    static int statusKey() {
+        synchronized (keyApps) {
+            keyApp(0);   // reads the file again if it changed
+            return statusKey;
+        }
+    }
+
+    static void setStatusKey(int keyCode) {
+        StringBuilder sb = new StringBuilder();
+        for (int key : KEYS) sb.append(key).append('=').append(keyApp(key)).append('\n');
+        if (keyCode != 0) sb.append(STATUS_PREFIX).append(keyCode).append('\n');
+        if (writeKeys(sb.toString())) version++;
+    }
+
+    /** The keys file as it is, for Backup ("" without one). */
+    static String keysText() {
+        try {
+            return new String(java.nio.file.Files.readAllBytes(keysFile().toPath()), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    static boolean setKeysText(String text) {
+        boolean ok = writeKeys(text);
+        if (ok) version++;
+        return ok;
+    }
+
+    /** Drawer shortcuts hidden in Home Settings > Shortcuts (their keys: HomeApps.drawerShortcuts). */
+    static List<String> shortcutsHidden() {
+        String v = sp().getString("shortcutsHidden", "");
+        List<String> out = new ArrayList<>();
+        for (String k : v.split(",")) if (!k.isEmpty()) out.add(k);
+        return out;
+    }
+
+    static void setShortcutsHidden(List<String> keys) {
+        put("shortcutsHidden", String.join(",", keys));
+    }
+
+    /** Their order, or null until it is changed. */
+    static List<String> shortcutsOrder() {
+        String v = sp().getString("shortcutsOrder", null);
+        if (v == null) return null;
+        List<String> out = new ArrayList<>();
+        for (String k : v.split(",")) if (!k.isEmpty()) out.add(k);
+        return out;
+    }
+
+    static void setShortcutsOrder(List<String> keys) {
+        put("shortcutsOrder", String.join(",", keys));
     }
 
     // [custom] The owner's additions (see ENHANCED.md). Kept together at the end so upstream updates merge around them.

@@ -396,8 +396,31 @@ final class HomeApps {
         return shortcut(SETTINGS, "settings", Ui.tr("Settings"), "settings");
     }
 
-    /** Shortcuts in the bottom drawer. */
+    /** Shortcuts in the bottom drawer: [custom] in the order and with the ones Home Settings > Shortcuts shows. */
     static List<Item> drawerShortcuts(Context c) {
+        List<Item> all = allDrawerShortcuts(c);
+        List<String> order = Prefs.shortcutsOrder(), hidden = Prefs.shortcutsHidden();
+        if (order == null && hidden.isEmpty()) return all;
+        List<String> keys = new ArrayList<>();
+        for (Item it : all) keys.add(it.key);
+        List<Item> out = new ArrayList<>();
+        for (String key : VisibleOrder.arrange(order, hidden, keys)) {
+            for (Item it : all) if (it.key.equals(key)) { out.add(it); break; }
+        }
+        return out;
+    }
+
+    /** [custom] Every shortcut this TV has, for Home Settings > Shortcuts, as {key, label}. */
+    static List<String[]> shortcutCandidates(Context c) {
+        List<String[]> out = new ArrayList<>();
+        for (Item it : allDrawerShortcuts(c)) out.add(new String[] {it.key, it.label});
+        return out;
+    }
+
+    /** [custom] Home Settings can't be hidden: it's the way back to this choice. */
+    static final String SHORTCUT_SETTINGS = "settings";
+
+    private static List<Item> allDrawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
         items.add(shortcut(ALL_APPS, "all", Ui.tr("All Apps"), "apps"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));

@@ -3677,8 +3677,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         float width = (MENU_W - 2 * MENU_PAD) * k;
+        menuMode = M_APP;   // [custom] a folder choice before must not carry over to this menu
         menuItem = null;
         menuOpenPick = null;
+        menuRatePick = null;
         menuAppItem = it;
         menuTitle = TextUtils.ellipsize(it.label, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
         menuSub = "";
@@ -5593,6 +5595,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (appItem != null) {
             menuMode = mode;   // closeMenu reset it (a menu this choice opens sets its own)
             pickAppMenu(appItem, choice);
+            if (!menuOpen) menuMode = M_APP;   // [custom] no new menu: back to the app menu's kind
             return;
         }
         if (it == null) return;

@@ -43,9 +43,13 @@ import java.security.MessageDigest;
 final class Updates {
     private Updates() {}
 
-    private static final String LATEST = "https://api.github.com/repos/simbasjungles/free-my-tv/releases/latest";
+    // [custom] Free My TV Enhanced has its own numbers (1.0.0 on) and releases, in its own repository (ENHANCED.md).
+    private static final String LATEST = "https://api.github.com/repos/sk-izsk/free-my-tv-enhanced/releases/latest";
     // The only place the APK may come from: this repository's releases (github.com redirects to its download host).
-    private static final String RELEASES = "https://github.com/simbasjungles/free-my-tv/releases/download/";
+    private static final String RELEASES = "https://github.com/sk-izsk/free-my-tv-enhanced/releases/download/";
+    /** [custom] The Free My TV release this build is based on (the last upstream merge), and where upstream's are. */
+    static final String BASED_ON = "1.5";
+    private static final String UPSTREAM_LATEST = "https://api.github.com/repos/simbasjungles/free-my-tv/releases/latest";
     // The release key's certificate, as `apksigner verify --print-certs` shows it: only APKs signed with it come in.
     private static final String RELEASE_CERT = "b85d4ff69cb42bfb1837ee0279506363954470b16402a4165f2f095886d19204";
     private static final String ASSET = "FreeMyTV.apk";
@@ -148,8 +152,14 @@ final class Updates {
         return READY.equals(o.optString("state")) && compare(o.optString("version"), installed) > 0;
     }
 
-    /** Home Settings' Updates row: what the last check found, or what to press. */
+    /** Home Settings' Updates row: what the last check found, or what to press; [custom] and a newer upstream. */
     static String summary(JSONObject o, String installed) {
+        String up = o.optString("upstream");
+        String s = ownSummary(o, installed);
+        return !up.isEmpty() && compare(up, BASED_ON) > 0 ? s + " · " + Ui.trf("Free My TV {version} is out", "version", up) : s;
+    }
+
+    private static String ownSummary(JSONObject o, String installed) {
         String v = o.optString("version");
         if (READY.equals(o.optString("state")) && !ready(o, installed)) return Ui.tr("Up to date");
         switch (o.optString("state")) {
@@ -193,17 +203,24 @@ final class Updates {
         String version = "";
         try {
             set(c, CHECKING, "", "");
-            JSONObject release = new JSONObject(get(LATEST));
+            String upstream = upstreamLatest();   // [custom] noted with every state below
+            JSONObject release;
+            try {
+                release = new JSONObject(get(LATEST));
+            } catch (java.io.FileNotFoundException none) {   // [custom] no release of ours yet
+                set(c, CURRENT, installedVersion(c), "", "upstream", upstream);
+                return false;
+            }
             version = release.optString("tag_name").replaceFirst("^[vV]", "");
             if (version.isEmpty()) throw new IOException("the latest release has no tag");
             String installed = installedVersion(c);
             AppLog.w("update: latest release " + version + ", installed " + installed);
             if (compare(version, installed) <= 0) {
-                set(c, CURRENT, version, "");
+                set(c, CURRENT, version, "", "upstream", upstream);
                 return false;
             }
             if (!takesReleases(c)) {   // a build made on a computer: its own key and config
-                set(c, BUILD, version, "");
+                set(c, BUILD, version, "", "upstream", upstream);
                 return false;
             }
             JSONObject asset = null;
@@ -249,6 +266,16 @@ final class Updates {
                 set(c, FAILED, version, offline(e) ? OFFLINE : OTHER);
             }
             return true;
+        }
+    }
+
+    /** [custom] Upstream's newest release ("1.6"), or "" when it can't be read: only reported, never installed. */
+    private static String upstreamLatest() {
+        try {
+            return new JSONObject(get(UPSTREAM_LATEST)).optString("tag_name").replaceFirst("^[vV]", "");
+        } catch (Exception e) {
+            AppLog.w("update: upstream: " + e.getMessage());
+            return "";
         }
     }
 
@@ -458,6 +485,7 @@ final class Updates {
         HttpURLConnection h = open(url);
         h.setRequestProperty("Accept", "application/vnd.github+json");
         try {
+            if (h.getResponseCode() == 404) throw new java.io.FileNotFoundException(url);   // [custom] no release yet
             if (h.getResponseCode() != 200) throw new IOException("GitHub returned HTTP " + h.getResponseCode());
             try (InputStream in = h.getInputStream()) {
                 return read(in);

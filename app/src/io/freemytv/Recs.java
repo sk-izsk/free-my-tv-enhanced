@@ -1108,6 +1108,14 @@ final class Recs {
         return minutes >= 60 ? Ui.trf("{h}h {m}m", "h", minutes / 60, "m", minutes % 60) : Ui.trf("{m}m", "m", minutes);
     }
 
+    /** [custom] A show's years on its card: "2022–26" (first to last episode so far), or "2022" for one year. */
+    static String yearSpan(String first, String lastDate) {
+        if (lastDate == null || lastDate.length() < 4 || "null".equals(lastDate)) return first;
+        String last = lastDate.substring(0, 4);
+        if (last.compareTo(first) <= 0) return first;
+        return first + "\u2013" + (last.substring(0, 2).equals(first.substring(0, 2)) ? last.substring(2) : last);
+    }
+
     private static String seasons(int n) {
         return n <= 0 ? null : Ui.plural("plural|one:{n} season|other:{n} seasons", n);
     }
@@ -1133,6 +1141,7 @@ final class Recs {
         p.length = length != null ? length : p.kind.equals("tv") ? Ui.tr("Series") : null;   // [custom] badges
         String date = o.optString(p.kind.equals("movie") ? "release_date" : "first_air_date", "");
         p.year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
+        if (p.year != null && p.kind.equals("tv")) p.year = yearSpan(p.year, o.optString("last_air_date", ""));   // [custom]
         JSONObject wp = o.optJSONObject("watch/providers");
         JSONObject br = wp == null ? null : wp.optJSONObject("results") == null ? null : wp.optJSONObject("results").optJSONObject(REGION);
         // A subscription first, then a free service with ads (Pluto TV, Tubi), then a free one: never rent or buy.

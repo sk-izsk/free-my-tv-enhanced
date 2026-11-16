@@ -109,6 +109,7 @@ final class RemoteKeys {
     static boolean serviceWanted() {
         if (!supported() || !FILTER_SAFE) return false;
         if (HISENSE) return true;   // the Input key: our drawer while the stock inputs panel is off (#494)
+        if (Prefs.statusKey() != 0) return true;   // [custom] TV Status's button
         for (int key : Prefs.KEYS) if (!Prefs.keyApp(key).isEmpty()) return true;
         return false;
     }
@@ -161,6 +162,10 @@ final class RemoteKeys {
         if (!ours) return false;
         if (ONN && !onnRemote(e)) return false;
         String pkg = Prefs.keyApp(keyCode);
+        if (!XIAOMI && keyCode == Prefs.statusKey()) {   // [custom] two quick presses: TV Status; one: as always
+            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) doublePress(c, keyCode, pkg, e);
+            return true;   // its key-up too
+        }
         if (pkg.isEmpty()) return false;   // "Nothing": the key goes on as if we weren't here
         if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
             // Only on Xiaomi, where the bursts are: everywhere else a second press opens the app again, as before.
@@ -168,6 +173,37 @@ final class RemoteKeys {
             lastKey = keyCode;
             lastDown = e.getEventTime();
             if (burst) return true;
+            open(c, pkg, e.getKeyCode());
+        }
+        return true;
+    }
+
+    // [custom] TV Status's button (Prefs.statusKey): the first press waits this long for a second one.
+    private static final long DOUBLE_MS = 400;
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static Runnable single;
+    private static long firstDown;
+
+    private static void doublePress(Context c, int keyCode, String pkg, KeyEvent e) {
+        if (single != null && e.getEventTime() - firstDown < DOUBLE_MS) {
+            MAIN.removeCallbacks(single);
+            single = null;
+            open(c, Prefs.TV_STATUS, e.getKeyCode());
+            return;
+        }
+        firstDown = e.getEventTime();
+        final Context app = c.getApplicationContext();
+        final int raw = e.getKeyCode();
+        single = () -> {
+            single = null;
+            if (!pkg.isEmpty()) open(app, pkg, raw);
+        };
+        MAIN.postDelayed(single, DOUBLE_MS);
+    }
+
+    /** Opens what a button's choice names (a package, or one of Prefs' own choices). */
+    private static void open(Context c, String pkg, int rawKey) {
+        {
             // Our own package means the home screen in use (Xiaomi's Mi button): ours, or the TV's own after the
             // watchdog handed it back. Not the settings app our launcher icon opens.
             Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
@@ -182,8 +218,9 @@ final class RemoteKeys {
                     : (JVC_SKYWORTH || TCL || PHILIPS_GTV || SONY) && pkg.equals("com.android.tv.settings")
                     ? new Intent(android.provider.Settings.ACTION_SETTINGS).setPackage(pkg)
                     : launchIntent(c.getPackageManager(), pkg);
+            if (pkg.equals(Prefs.TV_STATUS)) intent = HomeApps.statusIntent();   // [custom]
             if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
-            AppLog.w("remote key " + e.getKeyCode() + " -> " + pkg + (intent == null ? " (not installed)" : ""));
+            AppLog.w("remote key " + rawKey + " -> " + pkg + (intent == null ? " (not installed)" : ""));
             // Consumed even when it doesn't open: its key-up is ours too, and a key-down alone would reach the TV.
             if (intent != null) {
                 try {
@@ -193,7 +230,6 @@ final class RemoteKeys {
                 }
             }
         }
-        return true;
     }
 
     /**
