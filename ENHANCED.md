@@ -29,6 +29,14 @@ on Free My TV*.
 | **Measuring** | – | `./perf-check.sh <IP>`: the home screen's frame times and memory, for before/after comparisons |
 | **Updates** | Checks Free My TV's releases | Checks Enhanced's releases, and says when a newer Free My TV is out |
 
+![Home screen with badges](screenshots/home-badges.jpg)
+
+| TV Status | Folders | Select several |
+|---|---|---|
+| ![TV Status](screenshots/tv-status.jpg) | ![Folders](screenshots/all-apps-folders.jpg) | ![Select several](screenshots/select-several.jpg) |
+| **Add to folder** | **Shortcuts** | **Settings** |
+| ![Add to folder](screenshots/add-to-folder.jpg) | ![Shortcuts](screenshots/shortcuts.jpg) | ![Home Settings](screenshots/home-settings.jpg) |
+
 Every change to an original file carries a `[custom]` comment, so merging the original's updates stays easy.
 
 ## Setting it up

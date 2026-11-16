@@ -28,6 +28,17 @@ uninstalled, and one button brings the factory home screen back.
 - **Performance mode** for slower TVs
 - **Several TVs:** copy one TV's settings, folders and remote buttons to another
 
+## Screenshots
+
+<p align="center"><img src="screenshots/home-badges.jpg" width="900" alt="Home screen: picks with seasons or runtime, rating and year badges"></p>
+
+| | |
+|---|---|
+| <img src="screenshots/tv-status.jpg" alt="TV Status panel over the home screen"> **TV Status** over the home screen or any app | <img src="screenshots/all-apps-folders.jpg" alt="All Apps with folders"> **Folders** in All Apps |
+| <img src="screenshots/add-to-folder.jpg" alt="Add to folder menu"> **Add to folder**: every folder, or a new one | <img src="screenshots/select-several.jpg" alt="Select several apps"> **Select several** apps at once |
+| <img src="screenshots/home-settings.jpg" alt="Home Settings with Shortcuts and TV Status button"> **Shortcuts** and the **TV Status button** | <img src="screenshots/shortcuts.jpg" alt="Shortcuts editor"> Choose and order the drawer's **shortcuts** |
+| <img src="screenshots/picks-settings.jpg" alt="Picks settings"> **Picks**: Your taste, genre rows, Performance mode | |
+
 ## Install
 
 ### The easy way: an AI assistant

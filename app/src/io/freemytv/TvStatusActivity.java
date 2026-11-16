@@ -380,7 +380,7 @@ public class TvStatusActivity extends Activity {
             float x = PAD * k, right = w - PAD * k, y = 92 * k;
             c.drawText("TV Status", x, y, title);
             c.drawText(device, x, y + 40 * k, sub);
-            y += 96 * k;
+            y += 84 * k;
             y = stat(c, "Memory", memValue, memFrac, memNote, x, right, y);
             y = stat(c, "Storage", storeValue, storeFrac, null, x, right, y);
             y = stat(c, "CPU", cpuValue, cpuFrac, null, x, right, y);
@@ -388,7 +388,7 @@ public class TvStatusActivity extends Activity {
             y = stat(c, "Network", netValue, -1, null, x, right, y);
 
             float bw = (right - x - GAP * k) / 2;
-            y += 18 * k;
+            y += 4 * k;
             for (int i = 0; i < ACTIONS.length; i++) {
                 float bx = x + (i % 2) * (bw + GAP * k), by = y + (i / 2) * (BTN_H + GAP) * k;
                 r.set(bx, by, i == PERF ? right : bx + bw, by + BTN_H * k);
@@ -420,7 +420,10 @@ public class TvStatusActivity extends Activity {
                 c.drawRoundRect(r, BAR_H * k / 2, BAR_H * k / 2, fill);
                 yy += BAR_H * k;
             }
-            if (extra != null && !extra.isEmpty()) c.drawText(extra, x, yy + 28 * k, note);
+            if (extra != null && !extra.isEmpty()) {   // a note under the bar takes a line of its own
+                c.drawText(extra, x, yy + 28 * k, note);
+                return y + (ROW + 26) * k;
+            }
             return y + ROW * k;
         }
     }
