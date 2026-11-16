@@ -1,5 +1,6 @@
-# [custom] Free My TV Enhanced: once a week, opens an issue when Free My TV (the original) has a release newer than the
-# one last merged (Updates.BASED_ON), so its updates aren't missed. Reads only; changes no code.
+# [custom] Free My TV Enhanced: once a week, checks whether Free My TV (the original) has a release newer than the one
+# last merged (Updates.BASED_ON). If so, it opens an issue where issues are on; either way the run fails with the news,
+# and GitHub emails the repository's owner about a failed scheduled run. Reads only; changes no code.
 name: Watch Free My TV
 on:
   schedule:
@@ -23,8 +24,6 @@ jobs:
           newer=$(printf '%s\n%s\n' "$merged" "$latest" | sort -V | tail -1)
           [ "$newer" = "$merged" ] && exit 0
           title="Free My TV $latest is out (merged: $merged)"
-          if gh issue list --state open --search "in:title \"Free My TV $latest is out\"" --json number --jq 'length' | grep -qx 0; then
-            gh issue create --title "$title" --body "Free My TV published $latest: https://github.com/simbasjungles/free-my-tv/releases/tag/v$latest
-
-          To bring it in: git fetch upstream && git merge upstream/main, remove docs/ if it came back, raise Updates.BASED_ON and the version, build, test, release."
-          fi
+          gh issue create --title "$title" --body "Free My TV published $latest: https://github.com/simbasjungles/free-my-tv/releases/tag/v$latest. To bring it in: git fetch upstream && git merge upstream/main, remove docs/ if it came back, raise Updates.BASED_ON and the version, build, test, release." 2>/dev/null || true
+          echo "::error::$title. Merge it: git fetch upstream && git merge upstream/main"
+          exit 1
