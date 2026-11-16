@@ -450,6 +450,29 @@ final class HomeMode {
     }
 
     private static final String REMOTE_SERVICE = PKG + "/" + PKG + ".RemoteKeyService";
+
+    /** [custom] Whether Android has our key service running now (a force stop of the app stops it for good). */
+    static boolean remoteServiceRunning(Context c) {
+        android.view.accessibility.AccessibilityManager am = c.getSystemService(android.view.accessibility.AccessibilityManager.class);
+        if (am == null) return false;
+        for (android.accessibilityservice.AccessibilityServiceInfo info
+                : am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)) {
+            android.content.pm.ServiceInfo si = info.getResolveInfo() == null ? null : info.getResolveInfo().serviceInfo;
+            if (si != null && PKG.equals(si.packageName) && (PKG + ".RemoteKeyService").equals(si.name)) return true;
+        }
+        return false;
+    }
+
+    private static long remoteCheckedAt;
+
+    /** [custom] On the home screen's resume: the key service should run but doesn't (after a force stop): start it. */
+    static void reviveRemoteService(Context c) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (remoteCheckedAt != 0 && now - remoteCheckedAt < 60_000) return;
+        remoteCheckedAt = now;
+        if (!RemoteKeys.serviceWanted() || remoteServiceRunning(c)) return;
+        ensureRemoteService(c, 0);
+    }
     private static final Pattern SERVICE = Pattern.compile("[\\w.]+/[\\w.$]+");
 
     /** Adds ours to the enabled accessibility services (keeping the others, like TalkBack), or takes it out. */
@@ -466,7 +489,14 @@ final class HomeMode {
             }
             others.add(one);
         }
-        if (on == current.contains(REMOTE_SERVICE)) return;
+        boolean revive = on && !remoteServiceRunning(c);   // [custom] a force stop unbinds it for good
+        if (on == current.contains(REMOTE_SERVICE) && !revive) return;
+        if (revive) {   // [custom] out, a second's pause, back in: Android binds it again (without the pause it may not)
+            adb.shell(others.isEmpty() ? "settings delete secure enabled_accessibility_services"
+                    : "settings put secure enabled_accessibility_services '" + String.join(":", others) + "'");
+            android.os.SystemClock.sleep(1000);
+            AppLog.w("remote buttons service: not running, starting it again");
+        }
         List<String> list = new ArrayList<>(others);
         if (on) {
             JSONObject s = state(c);
@@ -480,6 +510,16 @@ final class HomeMode {
         if (on) adb.shell("settings put secure accessibility_enabled 1");
         else if (list.isEmpty() && state(c).optBoolean("accessibilityWasOff")) adb.shell("settings put secure accessibility_enabled 0");
         AppLog.w("remote buttons service " + (on ? "on" : "off"));
+        if (revive) {   // [custom] once more if Android still didn't start it
+            android.os.SystemClock.sleep(3000);
+            if (!remoteServiceRunning(c)) {
+                adb.shell(others.isEmpty() ? "settings delete secure enabled_accessibility_services"
+                        : "settings put secure enabled_accessibility_services '" + String.join(":", others) + "'");
+                android.os.SystemClock.sleep(1500);
+                adb.shell("settings put secure enabled_accessibility_services '" + String.join(":", list) + "'");
+                AppLog.w("remote buttons service: started again" + (remoteServiceRunning(c) ? "" : " (still not running)"));
+            }
+        }
     }
 
     private static final String NOW_PLAYING = PKG + "/" + PKG + ".NowPlaying";
