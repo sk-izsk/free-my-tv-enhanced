@@ -2362,9 +2362,15 @@ public class SettingsActivity extends Activity {
             for (String pkg : shelfOrder) {
                 for (String[] cand : candidates) if (cand[0].equals(pkg)) { shelfRows.add(cand); break; }
             }
-            if (editingGenres) {   // [custom] the genres keep their own order; forgetting the rated titles comes first
+            if (editingGenres) {   // [custom] forgetting the rated titles first, then the chosen genres (in order), then the rest
                 shelfRows.clear();
-                shelfRows.addAll(candidates);
+                for (String[] cand : candidates) if (cand[0].equals(FORGET_ROW)) shelfRows.add(cand);
+                for (String g : shelfOrder) {
+                    for (String[] cand : candidates) if (cand[0].equals(g)) { shelfRows.add(cand); break; }
+                }
+                for (String[] cand : candidates) {
+                    if (!cand[0].equals(FORGET_ROW) && !shelfOrder.contains(cand[0])) shelfRows.add(cand);
+                }
                 return;
             }
             for (String[] cand : candidates) {
