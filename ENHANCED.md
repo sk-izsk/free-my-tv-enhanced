@@ -72,8 +72,8 @@ or *Watchmode key*, with a QR code for your phone).
   Free My TV release last merged (never shown; it only tells when the original has a newer one).
 - *Home Settings → Updates* checks this repository's releases (tag `v1.0.0` and so on), and also says when Free My TV
   has a newer release than the one merged.
-- A weekly GitHub workflow (`.github/workflows/upstream-watch.yml`) opens an issue in this repository when Free My TV
-  publishes a release newer than `BASED_ON`, so its updates aren't missed.
+- A weekly GitHub workflow (`.github/workflows/upstream-watch.yml`) fails, and GitHub emails
+  the owner, when Free My TV publishes a release newer than `BASED_ON`, so its updates aren't missed.
 - To bring in the original's changes:
   ```bash
   git remote add upstream https://github.com/simbasjungles/free-my-tv.git   # once

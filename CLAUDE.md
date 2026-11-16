@@ -259,7 +259,7 @@ and never downloads. Raise `versionName` (1.0.1 fixes, 1.1.0 features) and `vers
 `Updates.BASED_ON` (the last one merged; never shown otherwise). After merging the original
 (`git fetch upstream && git merge upstream/main`), raise `BASED_ON`, and drop the original's website if it came back
 (`git rm -r docs .github/workflows/pages.yml tools/homebrew_repo.py`): this fork has no website. A weekly workflow
-(`.github/workflows/upstream-watch.yml`) opens an issue when Free My TV has a release newer than `BASED_ON`.
+(`.github/workflows/upstream-watch.yml`) fails (GitHub emails the owner) when Free My TV has a release newer than `BASED_ON`.
 The LG `.ipk` and Samsung `.wgt` aren't released here.
 
 ## Adapting it to another TV
