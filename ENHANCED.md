@@ -5,8 +5,8 @@ for Google TV and Android TV, by iZsk. Everything the original does still works 
 `io.freemytv`, so it installs over a Free My TV build signed with the same key. Only the Google TV / Android TV app
 has the additions (the LG and Samsung web app is the original's).
 
-**Version:** Enhanced has its own numbers, starting at **1.0.0**. Home Settings shows which Free My TV release it is
-based on, for example *Free My TV Enhanced 1.0.0 · based on Free My TV 1.5*.
+**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.0 · based
+on Free My TV*.
 
 ## What's new compared with Free My TV
 
@@ -52,8 +52,8 @@ You need a computer (macOS, Linux, or Windows with Git Bash), the TV's IP addres
 7. **Switch:** on the TV, open *Free My TV Enhanced* → *Home Screen* → *Free My TV Enhanced*. *Original* brings
    the TV's own home screen back at any time.
 
-The original's [README](README.md) has more on each TV brand, the screensaver and the optional servers (Plex,
-Immich, Home Assistant, Trakt).
+Free My TV's [own guide](https://github.com/simbasjungles/free-my-tv#readme) has more on each TV brand, the screensaver
+and the optional servers (Plex, Immich, Home Assistant, Trakt).
 
 ## The keys, and what works without them
 
@@ -68,16 +68,19 @@ or *Watchmode key*, with a QR code for your phone).
 ## Versions and keeping up with Free My TV
 
 - Enhanced's version (`versionName` in `app/AndroidManifest.xml`) is its own: 1.0.0, then 1.0.1 for fixes, 1.1.0
-  for new features. `versionCode` starts at 100 and goes up by one with every release. `Updates.BASED_ON` names the
-  Free My TV release last merged.
-- *Home Settings → Updates* checks this repository's releases (tag `v1.0.0` and so on). It also says *Free My TV 1.6
-  is out* when the original has a newer release than `BASED_ON`.
+  for new features. `versionCode` starts at 100 and goes up by one with every release. `Updates.BASED_ON` notes the
+  Free My TV release last merged (never shown; it only tells when the original has a newer one).
+- *Home Settings → Updates* checks this repository's releases (tag `v1.0.0` and so on), and also says when Free My TV
+  has a newer release than the one merged.
+- A weekly GitHub workflow (`.github/workflows/upstream-watch.yml`) opens an issue in this repository when Free My TV
+  publishes a release newer than `BASED_ON`, so its updates aren't missed.
 - To bring in the original's changes:
   ```bash
   git remote add upstream https://github.com/simbasjungles/free-my-tv.git   # once
   git fetch upstream
   git merge upstream/main          # merge, never reset: keeps the [custom] changes
   ./build.sh                       # then raise the version and BASED_ON, and install
+  git rm -r --ignore-unmatch docs  # the original's website isn't part of this fork
   ```
   Conflicts only happen where a `[custom]` change and an original change touch the same lines; keep both.
 

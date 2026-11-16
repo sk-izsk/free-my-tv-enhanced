@@ -813,7 +813,7 @@ public class SettingsActivity extends Activity {
         private static String versionName(Context c) {
             try {
                 return "Free My TV Enhanced " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName
-                        + " · " + Ui.trf("based on Free My TV {version}", "version", Updates.BASED_ON);   // [custom] the name, our numbers
+                        + " · " + Ui.tr("based on Free My TV");   // [custom] the name, our numbers
             } catch (android.content.pm.PackageManager.NameNotFoundException e) {
                 return "Free My TV Enhanced";
             }

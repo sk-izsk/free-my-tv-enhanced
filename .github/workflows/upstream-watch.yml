@@ -1,0 +1,30 @@
+# [custom] Free My TV Enhanced: once a week, opens an issue when Free My TV (the original) has a release newer than the
+# one last merged (Updates.BASED_ON), so its updates aren't missed. Reads only; changes no code.
+name: Watch Free My TV
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare with the original's latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          merged=$(grep -o 'BASED_ON = "[^"]*"' app/src/io/freemytv/Updates.java | cut -d'"' -f2)
+          latest=$(gh api repos/simbasjungles/free-my-tv/releases/latest --jq .tag_name | sed 's/^[vV]//')
+          echo "merged $merged, latest $latest"
+          newer=$(printf '%s\n%s\n' "$merged" "$latest" | sort -V | tail -1)
+          [ "$newer" = "$merged" ] && exit 0
+          title="Free My TV $latest is out (merged: $merged)"
+          if gh issue list --state open --search "in:title \"Free My TV $latest is out\"" --json number --jq 'length' | grep -qx 0; then
+            gh issue create --title "$title" --body "Free My TV published $latest: https://github.com/simbasjungles/free-my-tv/releases/tag/v$latest
+
+          To bring it in: git fetch upstream && git merge upstream/main, remove docs/ if it came back, raise Updates.BASED_ON and the version, build, test, release."
+          fi

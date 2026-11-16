@@ -47,8 +47,8 @@ final class Updates {
     private static final String LATEST = "https://api.github.com/repos/sk-izsk/free-my-tv-enhanced/releases/latest";
     // The only place the APK may come from: this repository's releases (github.com redirects to its download host).
     private static final String RELEASES = "https://github.com/sk-izsk/free-my-tv-enhanced/releases/download/";
-    /** [custom] The Free My TV release this build is based on (the last upstream merge), and where upstream's are. */
-    static final String BASED_ON = "1.5";
+    /** [custom] The Free My TV release last merged (never shown: only to tell when upstream has a newer one). */
+    static final String BASED_ON = "1.5.0";   // the tag of the last release merged
     private static final String UPSTREAM_LATEST = "https://api.github.com/repos/simbasjungles/free-my-tv/releases/latest";
     // The release key's certificate, as `apksigner verify --print-certs` shows it: only APKs signed with it come in.
     private static final String RELEASE_CERT = "b85d4ff69cb42bfb1837ee0279506363954470b16402a4165f2f095886d19204";

@@ -165,7 +165,7 @@ def build(preview, config, generic=False, hd=False):
 
     size = sum(len(d) for d in app.values()) + sum(len(d) for d in service.values()) + len(package)
     control = ('Package: %s\nVersion: %s\nSection: misc\nPriority: optional\nArchitecture: all\nInstalled-Size: %d\n'
-               'Maintainer: Free My TV <https://freemytv.io>\nDescription: A fast, ad-free home screen.\n'
+               'Maintainer: Free My TV <https://github.com/sk-izsk/free-my-tv-enhanced>\nDescription: A fast, ad-free home screen.\n'
                'webOS-Package-Format-Version: 2\nwebOS-Packager-Version: 1.0.0\n' % (app_id, version, size))
     data = ar([('debian-binary', b'2.0\n'), ('control.tar.gz', tar_gz([('control', control.encode('utf-8'))])),
                ('data.tar.gz', tar_gz(entries))])

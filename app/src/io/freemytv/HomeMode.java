@@ -86,7 +86,7 @@ final class HomeMode {
 
     /** What the settings and the refused switch say on a phone. */
     static String phoneText() {
-        return Ui.tr("Free My TV Enhanced is a TV app: install this APK on your Android TV or Google TV (freemytv.io), not on a phone.");
+        return Ui.tr("Free My TV Enhanced is a TV app: install this APK on your Android TV or Google TV (github.com/sk-izsk/free-my-tv-enhanced), not on a phone.");   // [custom] the fork's address
     }
 
     /** Classic Android TV's home screen; its recommendations service crashes on the screensaver while it's off (#11). */
