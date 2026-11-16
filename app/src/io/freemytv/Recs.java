@@ -59,6 +59,7 @@ final class Recs {
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
         String rating;          // [custom] TMDB's average as "★ 7.6" (the card's badge), or null
         String length, year;    // [custom] badges too: "1h 46m" / "3 seasons" (top left), "2022" (bottom left), or null
+        boolean span;           // [custom] year made with a show's last year ("2022–26"); saved lists from before lack it
     }
 
     /** [custom] TMDB's vote average as the card badge's text, or null without votes. */
@@ -82,7 +83,7 @@ final class Recs {
     /** How often Trakt is asked whether the account changed (marked watched, the watchlist): one small request. */
     private static final long TRAKT_EVERY = 10 * 60_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 6;   // 6: lists of up to POOL + TRAKT_MAX
+    private static final int CACHE_VERSION = 7;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span
     /** TMDB's titles in the list (trending, then the new releases), as on main. */
     private static final int POOL = 24;
     /** Trakt's titles in the list: about what the tabs show of them (now(): up to 2 in 5 in progress, 3 in 5 liked). */
@@ -982,6 +983,16 @@ final class Recs {
                 } catch (Exception e) {
                     AppLog.w("genre row runtime: " + e.getMessage());
                 }
+            } else {   // [custom] a show's seasons and its years ("2022–26"): one small request per show too
+                try {
+                    JSONObject d = get("/tv/" + p.id + "?language=" + lang());
+                    String n = seasons(d.optInt("number_of_seasons"));
+                    if (n != null) p.length = n;
+                    if (p.year != null) p.year = yearSpan(p.year, d.optString("last_air_date", ""));
+                    p.span = true;
+                } catch (Exception e) {
+                    AppLog.w("genre row show: " + e.getMessage());
+                }
             }
             p.detailed = true;
             out.add(p);
@@ -1012,10 +1023,12 @@ final class Recs {
         Pick k = known.get(key(p));
         if (k == null) return false;
         if (k.length == null && k.year == null && k.id > 0) return false;   // [custom] saved before the badges: fetch them
+        if ("tv".equals(k.kind) && !k.span && k.id > 0) return false;   // [custom] saved before the year span: fetch it
         p.title = k.title;
         p.rating = k.rating;   // [custom]
         p.length = k.length;
         p.year = k.year;
+        p.span = k.span;   // [custom]
         p.backdrop = k.backdrop;
         p.poster = k.poster;
         p.app = k.app;
@@ -1142,6 +1155,7 @@ final class Recs {
         String date = o.optString(p.kind.equals("movie") ? "release_date" : "first_air_date", "");
         p.year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
         if (p.year != null && p.kind.equals("tv")) p.year = yearSpan(p.year, o.optString("last_air_date", ""));   // [custom]
+        p.span = true;
         JSONObject wp = o.optJSONObject("watch/providers");
         JSONObject br = wp == null ? null : wp.optJSONObject("results") == null ? null : wp.optJSONObject("results").optJSONObject(REGION);
         // A subscription first, then a free service with ads (Pluto TV, Tubi), then a free one: never rent or buy.
@@ -1621,7 +1635,7 @@ final class Recs {
                         .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
                         .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine).put("detailed", p.detailed)
                         .put("rating", p.rating == null ? "" : p.rating)   // [custom]
-                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year));
+                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year).put("span", p.span));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("traktActivity", traktActivity).putLong("traktStamp", traktStamp)
@@ -1658,6 +1672,7 @@ final class Recs {
             p.rating = o.optString("rating").isEmpty() ? null : o.optString("rating");   // [custom]
             p.length = o.optString("length").isEmpty() ? null : o.optString("length");
             p.year = o.optString("year").isEmpty() ? null : o.optString("year");
+            p.span = o.optBoolean("span");   // [custom]
             out.add(p);
         }
         return out;
