@@ -49,6 +49,8 @@ final class Ui {
      * percentile frame went from 40 to 32 ms, as fast as the TV's own Settings app, and the look is the same.
      */
     static final boolean LEGACY = Build.VERSION.SDK_INT < 31 || smallMemory();
+    /** [custom] Performance mode (Prefs.performance): flat panels instead of glass, no blurred shadows, no sheen. */
+    static volatile boolean lite;
 
     /** Under 3 GB of RAM, read from /proc: LEGACY is read before Ui.init, so there is no Context yet. */
     private static boolean smallMemory() {

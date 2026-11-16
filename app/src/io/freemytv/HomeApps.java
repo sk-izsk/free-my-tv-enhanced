@@ -63,6 +63,8 @@ final class HomeApps {
     static final int RECENTS = 8;
     /** A Home Assistant entity in the drawer (HomeAssistant): OK calls its service, nothing opens. */
     static final int HOME_ASSISTANT = 9;
+    /** [custom] A folder of apps (Folders): its key is "folder:<id>", its tile the 2×2 preview. */
+    static final int FOLDER = 20;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -186,8 +188,14 @@ final class HomeApps {
         List<Item> items = new ArrayList<>();
         PackageManager pm = c.getPackageManager();
         int max = maxShelf(c);
+        List<Folders.Folder> folders = Folders.all();   // [custom] a folder can sit on the shelf
         for (String pkg : shelfPackages(c)) {
             if (items.size() >= max) break;
+            Folders.Folder folder = Folders.byKey(folders, pkg);
+            if (folder != null) {
+                items.add(folderItem(c, folder));
+                continue;
+            }
             Intent launch = launchIntent(pm, pkg);
             if (launch == null) continue;
             ResolveInfo ri = pm.resolveActivity(launch, 0);
@@ -262,9 +270,12 @@ final class HomeApps {
     // MARK: - Top buttons (the round ones at the top right)
 
     static final String TOP_LIVE = "live", TOP_INPUTS = "inputs", TOP_SETTINGS = "settings", TOP_RECENTS = "recents", TOP_STORE = "store";
+    static final String TOP_APPS = "apps";   // [custom] All Apps as a top button (the owner's request)
+    static final String TOP_STATUS = "status";   // [custom] TV Status (TvStatusActivity)
+    static final String TOP_TV = "tvsettings";   // [custom] TV Settings too: the top buttons offer what the drawer's shortcuts do
     static final List<String> TOP_DEFAULT = Collections.unmodifiableList(java.util.Arrays.asList(TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
     /** What can be a top button: the default three, and Recent Apps and App Store for whoever adds them. */
-    static final List<String> TOP_ALL = Collections.unmodifiableList(java.util.Arrays.asList(TOP_LIVE, TOP_INPUTS, TOP_SETTINGS, TOP_RECENTS, TOP_STORE));
+    static final List<String> TOP_ALL = Collections.unmodifiableList(java.util.Arrays.asList(TOP_LIVE, TOP_INPUTS, TOP_SETTINGS, TOP_RECENTS, TOP_STORE, TOP_APPS, TOP_TV, TOP_STATUS));   // [custom] TOP_APPS, TOP_TV, TOP_STATUS
     static final int MAX_TOP = TOP_ALL.size();
 
     /** The keys of the top buttons, in order (Settings > Top Buttons; by default Live TV, HDMI Inputs, Settings). */
@@ -322,7 +333,14 @@ final class HomeApps {
             case TOP_INPUTS: return action(INPUTS, TOP_INPUTS, Ui.tr("HDMI Inputs"), "hdmi");
             case TOP_RECENTS: return action(RECENTS, TOP_RECENTS, Ui.tr("Recent Apps"), "recents");
             case TOP_STORE: return action(APP, TOP_STORE, Ui.tr("App Store"), "store");
-            default: return action(SETTINGS, TOP_SETTINGS, Ui.tr("light|Settings"), "settings");
+            case TOP_APPS: return action(ALL_APPS, TOP_APPS, Ui.tr("All Apps"), "apps");   // [custom]
+            case TOP_TV: return action(ANDROID_SETTINGS, TOP_TV, Ui.tr("TV Settings"), "tv_settings");   // [custom]
+            case TOP_STATUS: {   // [custom]
+                Item it = action(DEVICE, TOP_STATUS, Ui.tr("TV Status"), "bolt");
+                it.intent = statusIntent();
+                return it;
+            }
+            default: return action(SETTINGS, TOP_SETTINGS, Ui.tr("Home Settings"), "settings");   // [custom] was "light|Settings": the drawer's name, beside TV Settings
         }
     }
 
@@ -390,6 +408,7 @@ final class HomeApps {
         Intent apps = new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS);
         if (tvSettings != null && !tvSettings.equals(answers(c, apps))) device(c, items, "app-settings", Ui.tr("App Settings"), "apps", apps);
         if (!Prefs.recents().equals("off")) items.add(shortcut(RECENTS, "recents", Ui.tr("Recent Apps"), "recents"));   // opt-in (Home Settings)
+        device(c, items, "tv-status", Ui.tr("TV Status"), "bolt", statusIntent());   // [custom]
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
         // The Amlogic ones (txhd2) carry the HTC app too, but its keystone crashes there (SurfaceFlinger refuses code
@@ -408,6 +427,11 @@ final class HomeApps {
         Item it = shortcut(DEVICE, key, label, symbol);
         it.intent = intent;
         items.add(it);
+    }
+
+    /** [custom] TV Status, the panel over the home screen. */
+    static Intent statusIntent() {
+        return new Intent().setComponent(new ComponentName("io.freemytv", "io.freemytv.TvStatusActivity"));
     }
 
     /** The package whose activity answers `intent`, or null. */
@@ -647,8 +671,35 @@ final class HomeApps {
         synchronized (HomeApps.class) {
             TILES.keySet().removeIf(k -> k.contains(".") && !seen.contains(k));
         }
-        items.add(special(c, SETTINGS, "freemytv-settings", "Free My TV", "sparkles"));
-        return items;
+        items.add(special(c, SETTINGS, "freemytv-settings", "Free My TV Enhanced", "sparkles"));
+        // [custom] Folders take their apps' places: the folders first (then the owner's order moves them).
+        List<Folders.Folder> folders = Folders.all();
+        if (!folders.isEmpty()) {
+            Set<String> inside = Folders.foldered(folders);
+            items.removeIf(it -> it.pkg != null && inside.contains(it.pkg));
+            for (int i = folders.size() - 1; i >= 0; i--) items.add(0, folderItem(c, folders.get(i)));
+        }
+        return ownOrder(items);   // [custom] was: return items (alphabetical)
+    }
+
+    /**
+     * [custom] All Apps in the order the owner moved them to (Prefs.allAppsOrder); an app never moved keeps its
+     * alphabetical place after them. Nothing saved: upstream's alphabetical list as it is.
+     */
+    private static List<Item> ownOrder(List<Item> items) {
+        List<String> saved = Prefs.allAppsOrder();
+        if (saved == null) return items;
+        List<String> keys = new ArrayList<>();
+        for (Item it : items) keys.add(it.key);
+        List<Item> out = new ArrayList<>();
+        for (String key : VisibleOrder.arrange(saved, new ArrayList<>(), keys)) out.add(items.get(keys.indexOf(key)));
+        // A folder never moved yet comes first (a new one), not after every app moved before it.
+        int front = 0;
+        for (int i = 0; i < out.size(); i++) {
+            Item it = out.get(i);
+            if (it.kind == FOLDER && !saved.contains(it.key)) out.add(front++, out.remove(i));
+        }
+        return out;
     }
 
     private static Item special(Context c, int kind, String key, String label, String symbol) {
@@ -1200,6 +1251,21 @@ final class HomeApps {
     }
 
     // MARK: - Cards
+
+    /** [custom] An app's 16:9 card, for a folder's preview (Folders.tile). */
+    static Bitmap tileFor(Context c, String pkg) {
+        return appTile(c, null, pkg, 0);
+    }
+
+    /** [custom] A folder as an item: its name and its preview tile. */
+    static Item folderItem(Context c, Folders.Folder f) {
+        Item it = new Item();
+        it.kind = FOLDER;
+        it.key = Folders.PREFIX + f.id;
+        it.label = f.name;
+        it.setTile(Folders.tile(c, f));
+        return it;
+    }
 
     private static synchronized Bitmap appTile(Context c, String key, String pkg, int brand) {
         String cacheKey = key != null ? key : pkg;

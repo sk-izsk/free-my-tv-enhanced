@@ -141,6 +141,7 @@ final class Config {
     static final boolean GENERIC = $GENERIC;   // built with --generic, as the APK on GitHub's releases (Updates)
     static final boolean OPEN_IN_STREMIO = $STREMIO;
     static final boolean OPEN_IN_NUVIO = $NUVIO;
+    static final String OPEN_WITH = "$(prop open_with '')";   // [custom] apps picks open in (OpenWith), comma-separated
 }
 EOF
 

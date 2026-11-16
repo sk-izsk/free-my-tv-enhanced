@@ -220,7 +220,8 @@ final class Prefs {
 
     /** Picks per tab on the home screen: 3 (as it always was) up to Recs.MAX_CARDS. */
     static int cards() {
-        return Math.max(3, Math.min(Recs.MAX_CARDS, sp().getInt("cards", 3)));
+        // [custom] With highlighted cards, five fit across: the most picks by default (the person can still lower it).
+        return Math.max(3, Math.min(Recs.MAX_CARDS, sp().getInt("cards", cardHighlight() ? Recs.MAX_CARDS : 3)));
     }
 
     static void setCards(int n) { put("cards", n); }
@@ -686,5 +687,132 @@ final class Prefs {
         StringBuilder sb = new StringBuilder();
         for (int key : KEYS) sb.append(key).append('=').append(key == keyCode ? pkg : keyApp(key)).append('\n');
         if (writeKeys(sb.toString())) version++;
+    }
+
+    // [custom] The owner's additions (see ENHANCED.md). Kept together at the end so upstream updates merge around them.
+
+    /** Picks: the focused card keeps its size and gets a ring (true), or widens as upstream does (false). */
+    static boolean cardHighlight() {
+        return sp().getBoolean("cardHighlight", true);
+    }
+
+    static void setCardHighlight(boolean on) { put("cardHighlight", on); }
+
+    /** Picks: the apps they open in, in order (OpenWith); open_with in config.properties until changed on the TV. */
+    static List<String> openWith() {
+        String v = sp().getString("openWith", Config.OPEN_WITH);
+        List<String> out = new ArrayList<>();
+        for (String p : v.split(",")) if (!p.trim().isEmpty()) out.add(p.trim());
+        return out;
+    }
+
+    static void setOpenWith(List<String> pkgs) {
+        put("openWith", String.join(",", pkgs));
+    }
+
+    /** "For You" is followed by the time, with the weather now below it. */
+    static boolean titleClock() {
+        return sp().getBoolean("titleClock", true);
+    }
+
+    static void setTitleClock(boolean on) { put("titleClock", on); }
+
+    /** Continue Watching as its own row under the shelf, with the picks at the top (HomeView, phase 3). */
+    static boolean cwRow() {
+        return sp().getBoolean("cwRow", true);
+    }
+
+    static void setCwRow(boolean on) { put("cwRow", on); }
+
+    // [custom] Your taste (Taste, phase 4)
+
+    /** Picks source: "trending" (upstream's) or "taste" (the owner's taste first, trending after). */
+    static String picksSource() {
+        return sp().getString("picksSource", "trending");
+    }
+
+    static void setPicksSource(String v) { put("picksSource", v); }
+
+    /** Genres chosen in Your taste, by English name (Taste.GENRES). */
+    static List<String> tasteGenres() {
+        return list(sp().getString("tasteGenres", ""));
+    }
+
+    static void setTasteGenres(List<String> names) { put("tasteGenres", String.join(",", names)); }
+
+    /** Loved titles, newest first, as "movie:603|The Matrix" (at most 20). */
+    static List<String> tasteLoved() {
+        return list(sp().getString("tasteLoved", ""));
+    }
+
+    /** "Not for me": titles that never come back, as "movie:603". */
+    static List<String> tasteNo() {
+        return list(sp().getString("tasteNo", ""));
+    }
+
+    static void loveTitle(String key, String title) {
+        List<String> loved = tasteLoved(), no = tasteNo();
+        loved.removeIf(e -> e.startsWith(key + "|"));
+        loved.add(0, key + "|" + title.replace(",", " ").replace("|", " "));
+        while (loved.size() > 20) loved.remove(loved.size() - 1);
+        no.remove(key);
+        // Quietly: rating a card mustn't restart the home screen (Recs sees the change through Taste.stamp).
+        sp().edit().putString("tasteLoved", String.join(",", loved)).putString("tasteNo", String.join(",", no)).apply();
+    }
+
+    static void notForMe(String key) {
+        List<String> loved = tasteLoved(), no = tasteNo();
+        loved.removeIf(e -> e.startsWith(key + "|"));
+        if (!no.contains(key)) no.add(0, key);
+        while (no.size() > 200) no.remove(no.size() - 1);
+        sp().edit().putString("tasteLoved", String.join(",", loved)).putString("tasteNo", String.join(",", no)).apply();
+    }
+
+    static void forgetTaste() {
+        sp().edit().remove("tasteLoved").remove("tasteNo").apply();
+        version++;
+    }
+
+    private static List<String> list(String v) {
+        List<String> out = new ArrayList<>();
+        for (String p : v.split(",")) if (!p.trim().isEmpty()) out.add(p.trim());
+        return out;
+    }
+
+    /** [custom] The genre rows under the shelf, by Taste.GENRES name, in order (GenreRows: at most 3); none: off. */
+    static List<String> genreRows() {
+        return list(sp().getString("genreRows", ""));
+    }
+
+    static void setGenreRows(List<String> names) { put("genreRows", String.join(",", names)); }
+
+    /** [custom] Performance mode: no glass, no blurred shadows, no sheen (Ui.lite; the home screen restarts with it). */
+    static boolean performance() {
+        return sp().getBoolean("performance", false);
+    }
+
+    static void setPerformance(boolean on) { put("performance", on); }
+
+    /** [custom] Folders (Folders), as JSON. */
+    static String foldersJson() {
+        return sp().getString("folders", "[]");
+    }
+
+    static void setFoldersJson(String json) {   // quietly: the home screen refreshes its lists itself (HomeView)
+        sp().edit().putString("folders", json).apply();
+    }
+
+    /** All Apps in the owner's order (Move in an app's menu); null until moved: alphabetical, as upstream. */
+    static List<String> allAppsOrder() {
+        String v = sp().getString("allAppsOrder", null);
+        if (v == null) return null;
+        List<String> out = new ArrayList<>();
+        for (String p : v.split(",")) if (!p.isEmpty()) out.add(p);
+        return out;
+    }
+
+    static void setAllAppsOrder(List<String> keys) {
+        // Quietly, as putQuietly: the sheet already shows the new order, and a new version would restart the home screen.
+        sp().edit().putString("allAppsOrder", String.join(",", keys)).apply();
     }
 }

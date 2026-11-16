@@ -57,6 +57,13 @@ final class Recs {
         int mine;               // Trakt: PROGRESS, LIKED (watchlist, recommended) or 0 (TMDB's)
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
+        String rating;          // [custom] TMDB's average as "★ 7.6" (the card's badge), or null
+        String length, year;    // [custom] badges too: "1h 46m" / "3 seasons" (top left), "2022" (bottom left), or null
+    }
+
+    /** [custom] TMDB's vote average as the card badge's text, or null without votes. */
+    static String ratingText(double vote) {
+        return vote > 0 ? "★ " + String.format(Locale.ROOT, "%.1f", vote) : null;
     }
 
     interface Listener { void onRecs(); }
@@ -64,7 +71,7 @@ final class Recs {
     // TMDB's own mirror of api.themoviedb.org, on the images' domain: some ISPs block the other name (Jio, #327)
     private static final String API = "https://api.tmdb.org/3";
     /** The most cards per tab and hour (Prefs.cards() picks how many, 3 by default); the home screen shows 3 at a time and scrolls. */
-    static final int MAX_CARDS = 6;
+    static final int MAX_CARDS = 7;   // [custom] was 6: seven picks per tab, five across with highlighted cards
 
     /** The backdrops: on a 720p UI, TMDB's 1280-wide copy shows the same and is lighter to download and decode. */
     private static final String IMAGES = "https://image.tmdb.org/t/p/" + (Backdrop.W <= 1280 ? "w1280" : "original");
@@ -547,7 +554,8 @@ final class Recs {
         if (!newKey && !newTrakt && failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
         int p = period(now);
         boolean stale = newKey || p != period || now - listAt > LIST_EVERY || now < listAt || picks.isEmpty()
-                || !listLanguage.equals(Ui.language);
+                || !listLanguage.equals(Ui.language)
+                || !new File(context.getFilesDir(), "discover-common.txt").exists();   // [custom] the genre rows' filter, once
         boolean missing = false;
         for (Pick pick : wanted()) missing |= !pick.detailed || !hasImage(pick) || needsLink(pick);
         boolean checkTrakt = !stale && !newTrakt && Trakt.signedIn(context) && (now - traktCheckedAt > TRAKT_EVERY || now < traktCheckedAt);
@@ -759,6 +767,12 @@ final class Recs {
         String common = "&language=" + lang() + "&watch_region=" + REGION + "&with_watch_monetization_types=" + WATCH_TYPES + "&include_adult=false"
                 + "&sort_by=popularity.desc&with_watch_providers=" + URLEncoder.encode(ids.toString(), "UTF-8")
                 + (Prefs.hideAnimation() ? "&without_genres=" + ANIMATION : "");
+        discoverCommon = common;   // [custom] the genre rows use the same filter (GenreRows), kept for the next start
+        try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), "discover-common.txt"))) {
+            out.write(common.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            AppLog.w("discover filter: " + e.getMessage());
+        }
         // 1. Trending this week (TMDB goes by what people are watching and searching for right now), only what is
         //    on one of the TV's services: the details say where (and are then ready).
         List<Pick> hotMovies = new ArrayList<>(), hotShows = new ArrayList<>();
@@ -812,6 +826,17 @@ final class Recs {
         }
         newMovies.removeIf(x -> watched.contains(key(x)));
         newShows.removeIf(x -> watched.contains(key(x)));
+        // [custom] "Not for me" titles never come back; Your taste's own lists (Taste) go first when it's chosen.
+        Set<String> notForMe = new HashSet<>(Prefs.tasteNo());
+        for (List<Pick> l : java.util.Arrays.asList(hotMovies, hotShows, newMovies, newShows)) l.removeIf(x -> notForMe.contains(key(x)));
+        List<Pick> tasteMovies = new ArrayList<>(), tasteShows = new ArrayList<>();
+        if (Taste.on()) {
+            try {
+                tasteLists(common, watched, notForMe, known, tasteMovies, tasteShows);
+            } catch (Exception e) {
+                AppLog.w("taste: " + e.getMessage());
+            }
+        }
         List<Pick> progress = new ArrayList<>(), listMovies = new ArrayList<>(), listShows = new ArrayList<>();
         List<Pick> recMovies = new ArrayList<>(), recShows = new ArrayList<>();
         if (trakt != null) {
@@ -847,6 +872,7 @@ final class Recs {
         for (Pick x : progress) if (seen.add(key(x))) list.add(x);
         alternate(list, seen, listMovies, listShows, TRAKT_MAX);
         alternate(list, seen, recMovies, recShows, TRAKT_MAX);
+        alternate(list, seen, tasteMovies, tasteShows, list.size() + 2 * MAX_CARDS);   // [custom] Your taste
         int ours = list.size();
         alternate(list, seen, hotMovies, hotShows, ours + POOL);
         alternate(list, seen, newMovies, newShows, ours + POOL);
@@ -856,6 +882,111 @@ final class Recs {
         period = p;
         listAt = System.currentTimeMillis();
         listLanguage = Ui.language;
+    }
+
+    /**
+     * [custom] Your taste (Taste, ENHANCED.md phase 4): TMDB's recommendations for the loved titles, newest first
+     * ("Because you loved …"), then the popular titles of the chosen genres on the TV's services ("For your taste"), up
+     * to what a tab shows of each kind. Recommendations can be anywhere, so their details say which app has them (one
+     * TMDB request each, as for trending); the genres' come from discover with the TV's services already.
+     */
+    private void tasteLists(String common, Set<String> watched, Set<String> notForMe, Map<String, Pick> known,
+                            List<Pick> movies, List<Pick> shows) throws Exception {
+        Set<String> loved = new HashSet<>();
+        for (String e : Prefs.tasteLoved()) loved.add(e.substring(0, Math.max(0, e.indexOf('|'))));
+        for (String e : Prefs.tasteLoved()) {
+            if (movies.size() >= MAX_CARDS && shows.size() >= MAX_CARDS) break;
+            int bar = e.indexOf('|'), colon = e.indexOf(':');
+            if (bar < 0 || colon < 0) continue;
+            String kind = e.substring(0, colon), title = e.substring(bar + 1);
+            JSONArray rec = get("/" + kind + "/" + e.substring(colon + 1, bar) + "/recommendations?language=" + lang()).getJSONArray("results");
+            List<Pick> candidates = new ArrayList<>();
+            for (int i = 0; i < rec.length() && i < 10; i++) add(candidates, rec.getJSONObject(i), kind);
+            List<Pick> out = kind.equals("movie") ? movies : shows;
+            for (Pick p : candidates) {
+                if (out.size() >= MAX_CARDS) break;
+                String k = key(p);
+                if (notForMe.contains(k) || watched.contains(k) || loved.contains(k)) continue;
+                p.tag = Ui.trf("Because you loved {title}", "title", title);
+                p.mine = LIKED;   // with Trakt's watchlist: up to 3 in 5 cards, ahead of TMDB's (now())
+                try {
+                    if (!reuse(p, known)) fetchDetails(p);
+                } catch (Exception ex) {
+                    continue;
+                }
+                if (p.pkg != null) out.add(p);
+            }
+        }
+        List<String> genres = Prefs.tasteGenres();
+        for (String kind : new String[] {"movie", "tv"}) {
+            String ids = Taste.ids(genres, kind);
+            List<Pick> out = kind.equals("movie") ? movies : shows;
+            if (ids.isEmpty() || out.size() >= MAX_CARDS) continue;
+            JSONArray found = get("/discover/" + kind + "?vote_count.gte=" + (kind.equals("movie") ? 100 : 50)
+                    + "&with_genres=" + URLEncoder.encode(ids, "UTF-8") + common).getJSONArray("results");
+            List<Pick> candidates = new ArrayList<>();
+            for (int i = 0; i < found.length(); i++) add(candidates, found.getJSONObject(i), kind);
+            for (Pick p : candidates) {
+                if (out.size() >= MAX_CARDS) break;
+                String k = key(p);
+                if (notForMe.contains(k) || watched.contains(k) || loved.contains(k)) continue;
+                p.mine = LIKED;   // no tag: the owner found "For your taste" under every card took room for nothing
+                out.add(p);
+            }
+        }
+    }
+
+    /** [custom] The last list's discover filter (the TV's services, language, region), for the genre rows; null before. */
+    private volatile String discoverCommon;
+
+    /**
+     * [custom] A genre row (GenreRows): TMDB's most popular titles of the genre (Taste.GENRES name) and kind on the TV's
+     * services, without "Not for me" ones, up to `max`. Each opens through Open picks with (its Nuvio link); no details
+     * are fetched, so a row costs one TMDB request. Empty until the picks' list was made once (the services' filter).
+     */
+    List<Pick> genreRow(String genre, String kind, int max) throws Exception {
+        if (discoverCommon == null) {   // the list was read from disk at start: its filter from the last time it was made
+            File f = new File(context.getFilesDir(), "discover-common.txt");
+            if (f.exists()) discoverCommon = new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+        }
+        String common = discoverCommon;
+        List<Pick> out = new ArrayList<>();
+        String ids = Taste.ids(java.util.Collections.singletonList(genre), kind);
+        if (common == null || ids.isEmpty()) return out;
+        JSONArray found = get("/discover/" + kind + "?vote_count.gte=" + (kind.equals("movie") ? 100 : 50)
+                + "&with_genres=" + URLEncoder.encode(ids, "UTF-8") + common).getJSONArray("results");
+        Set<String> notForMe = new HashSet<>(Prefs.tasteNo());
+        List<Pick> all = new ArrayList<>();
+        Map<Integer, String> metas = new HashMap<>(), ratings = new HashMap<>();   // the year, the rating
+        for (int i = 0; i < found.length(); i++) {
+            JSONObject o = found.getJSONObject(i);
+            add(all, o, kind);
+            String date = o.optString(kind.equals("movie") ? "release_date" : "first_air_date", "");
+            ratings.put(o.optInt("id"), ratingText(o.optDouble("vote_average", 0)));   // badges on the card
+            metas.put(o.optInt("id"), date.length() >= 4 ? date.substring(0, 4) : "");   // the year
+        }
+        String pkg = OpenWith.first(context);
+        for (Pick p : all) {
+            if (out.size() >= max) break;
+            if (notForMe.contains(key(p))) continue;
+            p.app = "nuvio";
+            p.pkg = pkg;
+            p.link = nuvioLink(p.kind, p.id);
+            p.meta = "";   // only the title under a row's card: the rest are badges
+            p.year = metas.containsKey(p.id) && !metas.get(p.id).isEmpty() ? metas.get(p.id) : null;
+            p.rating = ratings.get(p.id);
+            p.length = kind.equals("movie") ? null : Ui.tr("Series");
+            if (kind.equals("movie")) {   // the runtime badge: one small request per movie
+                try {
+                    p.length = runtime(get("/movie/" + p.id + "?language=" + lang()).optInt("runtime"));
+                } catch (Exception e) {
+                    AppLog.w("genre row runtime: " + e.getMessage());
+                }
+            }
+            p.detailed = true;
+            out.add(p);
+        }
+        return out;
     }
 
     /** A Trakt title ("movie:603") with its details, added to `out` when it's on one of the TV's services. */
@@ -880,7 +1011,11 @@ final class Recs {
     private static boolean reuse(Pick p, Map<String, Pick> known) {
         Pick k = known.get(key(p));
         if (k == null) return false;
+        if (k.length == null && k.year == null && k.id > 0) return false;   // [custom] saved before the badges: fetch them
         p.title = k.title;
+        p.rating = k.rating;   // [custom]
+        p.length = k.length;
+        p.year = k.year;
         p.backdrop = k.backdrop;
         p.poster = k.poster;
         p.app = k.app;
@@ -982,6 +1117,7 @@ final class Recs {
         JSONObject o = get("/" + p.kind + "/" + p.id
                 + "?language=" + lang() + "&append_to_response=watch/providers,images" + (Config.OPEN_IN_STREMIO ? ",external_ids" : "") + "&include_image_language=null," + Ui.language.replaceAll("-.*", "") + ",en");
         p.title = title(p, o);
+        p.rating = ratingText(o.optDouble("vote_average", 0));   // [custom] the card's badge
         String poster = o.optString("poster_path", "");
         if (!poster.isEmpty() && !"null".equals(poster)) p.poster = poster;
         String best = bestBackdrop(o.optJSONObject("images"));
@@ -989,13 +1125,14 @@ final class Recs {
         else if (p.backdrop == null && !o.isNull("backdrop_path")) p.backdrop = o.optString("backdrop_path");   // a watchlist title
         List<String> parts = new ArrayList<>();
         JSONArray genres = o.optJSONArray("genres");
-        if (p.kind.equals("tv")) parts.add(Ui.tr("Series"));
-        if (genres != null && genres.length() > 0) {
+        if (genres != null && genres.length() > 0) {   // [custom] "Series", the length and the year are badges now
             String name = genres.getJSONObject(0).optString("name");
             parts.add(genre(name));
         }
         String length = p.kind.equals("movie") ? runtime(o.optInt("runtime")) : seasons(o.optInt("number_of_seasons"));
-        if (length != null) parts.add(length);
+        p.length = length != null ? length : p.kind.equals("tv") ? Ui.tr("Series") : null;   // [custom] badges
+        String date = o.optString(p.kind.equals("movie") ? "release_date" : "first_air_date", "");
+        p.year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
         JSONObject wp = o.optJSONObject("watch/providers");
         JSONObject br = wp == null ? null : wp.optJSONObject("results") == null ? null : wp.optJSONObject("results").optJSONObject(REGION);
         // A subscription first, then a free service with ads (Pluto TV, Tubi), then a free one: never rent or buy.
@@ -1131,6 +1268,8 @@ final class Recs {
     /** Nuvio's package when open_in_nuvio is on and the app is on the TV: the release APK first, else Google Play's. */
     private String nuvio() {
         if (!Config.OPEN_IN_NUVIO) return null;
+        String chosen = OpenWith.first(context);   // [custom] the apps chosen in Open picks with (the Nuvio forks) first
+        if (chosen != null) return chosen;
         for (String pkg : NUVIO) if (HomeApps.launchIntent(context.getPackageManager(), pkg) != null) return pkg;
         return null;
     }
@@ -1145,6 +1284,7 @@ final class Recs {
         if (stremio()) stamp = stamp * 31L + 1;   // off: the same stamp as before, so nothing is fetched again
         String nuvio = nuvio();
         if (nuvio != null) stamp = stamp * 31L + nuvio.hashCode();
+        stamp = stamp * 31L + Taste.stamp();   // [custom] a new taste fetches again (0 while it's off: as before)
         for (String[] service : SERVICES) stamp = stamp * 31L + (installed(service[2]) ? service[2].hashCode() : 0);
         // Switched on, one found by name counts; off, finding it changes nothing, so nothing is fetched again (a 0 would:
         // it still multiplies the stamp by 31).
@@ -1470,7 +1610,9 @@ final class Recs {
                         .put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
                         .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
-                        .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine).put("detailed", p.detailed));
+                        .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine).put("detailed", p.detailed)
+                        .put("rating", p.rating == null ? "" : p.rating)   // [custom]
+                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("traktActivity", traktActivity).putLong("traktStamp", traktStamp)
@@ -1504,6 +1646,9 @@ final class Recs {
             p.tag = o.optString("tag").isEmpty() ? null : o.optString("tag");
             p.mine = o.optInt("mine");
             p.detailed = o.optBoolean("detailed");
+            p.rating = o.optString("rating").isEmpty() ? null : o.optString("rating");   // [custom]
+            p.length = o.optString("length").isEmpty() ? null : o.optString("length");
+            p.year = o.optString("year").isEmpty() ? null : o.optString("year");
             out.add(p);
         }
         return out;

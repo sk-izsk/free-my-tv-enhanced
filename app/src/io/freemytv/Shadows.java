@@ -28,6 +28,7 @@ final class Shadows {
 
     /** Draws `shape` (radius `r`) with `paint`, whose BlurMaskFilter was made with radius `blur`. */
     void draw(Canvas c, RectF shape, float r, float blur, Paint paint) {
+        if (Ui.lite) return;   // [custom] Performance mode
         int radius = Math.max(0, Math.round(r)), b = Math.max(1, Math.round(blur));
         int m = (int) Math.ceil(b * 1.8f) + 1;        // how far the blur spreads outside the shape
         int corner = radius + 2 * m;                  // the slice that holds the curve and the blur on both sides of it

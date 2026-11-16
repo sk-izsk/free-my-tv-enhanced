@@ -235,6 +235,10 @@ final class Scene {
     void liquid(Canvas c, RectF r, float radius, int tint, float tintAlpha, float lift, float band, float refraction,
                 float specular, float alpha) {
         if (alpha <= 0.004f) return;
+        if (Ui.lite) {   // [custom] Performance mode: a flat panel
+            flatGlass(c, r, radius, tint, tintAlpha, alpha);
+            return;
+        }
         if (liquid == null) {
             if (imageGlass && softShaderA != null) {
                 // Mapped by what the copy covers: 270 / 8 = 33.75 rows, of which the bitmap holds 33.
@@ -339,6 +343,10 @@ final class Scene {
     /** Same, with an opacity (0 to 1) for the whole glass. */
     void glass(Canvas c, RectF r, float radius, int tint, float tintAlpha, int glow, float glowAlpha, float lift, float body, float alpha) {
         if (alpha <= 0.004f) return;
+        if (Ui.lite) {   // [custom] Performance mode: a flat panel
+            if (body > 0) flatGlass(c, r, radius, tint, tintAlpha, alpha);
+            return;
+        }
         if (glass == null) {
             if (imageFrost && softShaderFrost != null) {
                 bitmapGlass(c, r, radius, softShaderFrost, Backdrop.FW / (float) SOFT_FROST, Backdrop.FH / (float) SOFT_FROST, null, 0,
@@ -397,6 +405,16 @@ final class Scene {
             c.drawRoundRect(sheenRect, radius, radius, sheenPaint);
             c.restore();
         }
+    }
+
+    /** [custom] Performance mode's glass: one opaque-ish fill and the rim, nothing read from the background. */
+    private void flatGlass(Canvas c, RectF r, float radius, int tint, float tintAlpha, float alpha) {
+        radius = Math.min(radius, Math.min(r.width(), r.height()) / 2);
+        flatFill.setColor(Ui.alpha(tint | 0xFF000000, Math.max(0.7f, tintAlpha) * alpha));
+        c.drawRoundRect(r, radius, radius, flatFill);
+        flatRim.setAlpha(Math.round(0x33 * alpha));
+        c.drawRoundRect(r, radius, radius, flatRim);
+        flatRim.setAlpha(0x33);
     }
 
     private static int blend(int a, int b, float t) {

@@ -12,6 +12,8 @@ import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
+import android.provider.Settings;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.LauncherApps;
@@ -81,7 +83,8 @@ import java.util.function.Consumer;
  * Measurements are in a 1920×1080 space (k = width / 1920). The screen is split into layers so the TV's weak GPU only
  * redraws what changed.
  */
-final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
+final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener,
+        GenreRows.Listener {   // [custom] GenreRows.Listener
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
@@ -111,6 +114,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 30;
     private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, MENU = 8, RECENT = 9;
+    /**
+     * [custom] Continue Watching as its own row under the shelf (Prefs.cwRow, ENHANCED.md phase 3): its layer (ROWS) sits
+     * below the screen at ROWS_AT and comes up with everything else, ROWS_LIFT for the row, then SHIFT more for the
+     * drawer. Hidden (not drawn at all) while the home screen rests.
+     */
+    private static final int ROWS = 10;
+    private static final float ROWS_AT = 1060, ROWS_LIFT = 460, ROWS_H = 470;
+    /**
+     * With the row and the drawer both up, the row rises ROWS_UP more and the drawer sits ROWS_DOWN lower: the same gap
+     * between the row's text and "Inputs" as between the inputs and the weather card (about 45 px).
+     */
+    private static final float ROWS_UP = 20, ROWS_DOWN = 24;
+    /**
+     * [custom] Genre rows (GenreRows, phase 5): stacked after Continue Watching (the owner's order), GENRE_H each; 16:9 cards
+     * of G_CARD_W, five across. A focused row sits where the Continue Watching row does (its top at ROWS_FOCUS).
+     */
+    private static final float GENRE_H = 330, G_CARD_W = 320, G_CARD_H = 180, G_GAP = 40, ROWS_FOCUS = 600;
     private static final int Z_STATUS = 0, Z_HERO = 1, Z_SHELF = 2, Z_DRAWER = 3;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
@@ -127,6 +147,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static int tabsGeneration = -1;
     private static final String[] TAB_KIND = {null, "movie", "tv"};
     private static final int Z_TOP = 4, Z_CARDS = 5, Z_WATCH = 6;
+    private static final int Z_GENRE = 12;   // [custom] a genre row under the shelf (phase 5; 7–11 are taken)
 
     private final Activity activity;
     private final Scene scene = new Scene();
@@ -159,6 +180,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     });
     private final RectF a11yRect = new RectF();
     private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, menuLayer, recentLayer;
+    private final Layer rowsLayer;   // [custom]
+    private final Spring rows = new Spring(0.46f, 0.92f, 0);   // [custom] 0: resting, 1: the Continue Watching row is up
+    private boolean cwRow = true;   // [custom] Prefs.cwRow(), read with the cards
+    private GenreRows genreRows;   // [custom] phase 5
+    /** [custom] The genre rows shown (those with titles for this tab), their titles, the focused row and each one's focus. */
+    private final List<String> genreShown = new ArrayList<>();
+    private final List<List<Recs.Pick>> genreItems = new ArrayList<>();
+    private int genreSection;
+    private final int[] genreItem = new int[GenreRows.MAX_ROWS];
+    private final Spring[][] genreFocus = new Spring[GenreRows.MAX_ROWS][GenreRows.PER_ROW];
+    private final Spring[] genreScroll = new Spring[GenreRows.MAX_ROWS];
     private RecentApps recents;
     private int zone = Z_SHELF;
 
@@ -184,6 +216,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring[] cardOpen = new Spring[Recs.MAX_CARDS];
     /** Picks per tab (Prefs.cards()), read when the cards update, not on every frame. */
     private int cardSlots = 3;
+    /** [custom] Prefs.cardHighlight(), read with cardSlots: the focused card keeps its size and gets a ring. */
+    private boolean cardHighlight = true;
     /** The row scrolls in whole cards: the focused one stays among the first three. */
     private final Spring cardScroll = new Spring(0.32f, 0.78f, 0);
     // Settings > Top of the screen: the picks (above), what you were watching in your apps (a row of 16:9 cards that
@@ -205,7 +239,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Holding OK on a card: a small menu (hide it, open the app, cancel) on its own layer, drawn only while it shows.
     private static final float MENU_W = 720, MENU_PAD = 44, MENU_INSET = 16, MENU_ROW = 76, MENU_STEP = 80, MENU_R = 36;
     private final Spring menu = new Spring(0.26f, 0.86f, 0), menuPick = new Spring(0.22f, 0.9f, 0);
-    private final String[] menuOptions = new String[3];
+    private final String[] menuOptions = new String[12];   // [custom] was 3: the Open with chooser, the app and folder menus
+    /** [custom] Options in use (Continue Watching's menu has 3; the Open with chooser, its apps and Cancel). */
+    private int menuCount = 3;
+    /** [custom] The pick the Open with chooser is for (null for Continue Watching's menu), and the apps it lists. */
+    private Recs.Pick menuOpenPick;
+    /** [custom] The All Apps app whose menu is open (Move, shelf, App info), or null. */
+    private HomeApps.Item menuAppItem;
+    /** [custom] Folders (phase 6): which of the app menus is open, and the open folder's state. */
+    private static final int M_APP = 0, M_FOLDER_PICK = 1, M_FOLDER = 2, M_IN_FOLDER = 3, M_BULK = 4, M_FOLDER_BULK = 5;
+    // [custom] Select several: in All Apps (selecting) or in an open folder (folderSelecting), OK ticks apps and a
+    // held OK opens what to do with them all. bulkPkgs: the apps a folder pick acts on (empty: the menu's one app).
+    private boolean selecting, folderSelecting;
+    private final java.util.Set<String> selected = new java.util.LinkedHashSet<>();
+    private final List<String> bulkPkgs = new ArrayList<>();
+    private final Paint checkFill = new Paint(Paint.ANTI_ALIAS_FLAG), checkLine = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private int menuMode = M_APP;
+    private final List<Folders.Folder> menuFolders = new ArrayList<>();
+    private boolean folderOpen, folderHeld;
+    private HomeApps.Item folderItem;
+    private final List<HomeApps.Item> folderApps = new ArrayList<>();
+    private int folderIndex;
+    private final RectF folderFrom = new RectF(), folderPanel = new RectF();
+    private final Spring folderAnim = new Spring(0.42f, 0.86f, 0);
+    private final Runnable folderHold = () -> { folderHeld = true; showInFolderMenu(); };
+    /** [custom] The pick whose Love it / Not for me menu is open (Your taste), or null. */
+    private Recs.Pick menuRatePick;
+    /** [custom] All Apps: the focused app is lifted and the arrows move it; its order before, for Back. */
+    private boolean appMoving;
+    private List<HomeApps.Item> gridMoveOrigin;
+    private final List<String[]> menuApps = new ArrayList<>();
     private final RectF menuPanel = new RectF();
     private final Set<String> hiddenNow = new HashSet<>();   // hidden this session (a reload already under way may not know)
     private boolean menuOpen;
@@ -217,6 +280,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF[] cardRects = new RectF[Recs.MAX_CARDS];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
+    /** [custom] Prefs.titleClock: the time as the top title and the weather after it; its line, made per weather update. */
+    private boolean titleClock = true;
+    private Paint lBadge;   // [custom] the rating badge's text
+    private String titleWeather = "";
+    private long titleWeatherAt = -1;
+    private int titleWeatherPrefs = -1;
     private Shader lightGradient;
     // Continue Watching: the background takes the focused card's colour (worked out once per picture, WatchArt), easing
     // from one to the next. Drawn as a plain fill under a fixed shade, so a colour change creates nothing per frame.
@@ -407,12 +476,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             switch (kind) {
                 case SKY: drawSky(c); break;
                 case HERO: drawLightTop(c); break;
+                case ROWS: drawRows(c); break;   // [custom]
                 case STATUS: drawLightButtons(c); break;
                 case PLATTER: drawPlatter(c); break;
                 case TILES: drawTiles(c); break;
                 case DRAWER: drawDrawer(c); break;
                 case SHEET: drawSheet(c); break;
-                case MENU: drawMenu(c); break;
+                case MENU: drawFolder(c); drawMenu(c); break;   // [custom] drawFolder: the open folder, under its menu
                 case RECENT: if (recents != null) recents.draw(c, w, h); break;
                 default: drawToast(c); break;
             }
@@ -596,6 +666,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             playing.start();   // the listener allowed after the screen showed (a no-op once watching)
             data.refreshIfStale();
             recs.refreshIfStale();
+            genreRows.refreshIfStale();   // [custom]
             checkNotices();
             updatePalette();
             checkNight(true);
@@ -608,8 +679,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     HomeView(Activity a) {
         super(a);
         activity = a;
+        Ui.lite = Prefs.performance();   // [custom] Performance mode (settings restart the home screen)
         data = HomeData.get(a);
         recs = Recs.get(a);
+        genreRows = new GenreRows(a, recs, this);   // [custom]
+        for (int r = 0; r < GenreRows.MAX_ROWS; r++) {
+            genreScroll[r] = new Spring(0.32f, 0.78f, 0);
+            for (int i = 0; i < GenreRows.PER_ROW; i++) genreFocus[r][i] = new Spring(0.32f, 0.78f, 0);
+        }
         playing = new NowPlaying.Watch(a, this::onPlaying);
         click = new Click(a);
         shelfVisible = HomeApps.shelfVisible(a);
@@ -635,18 +712,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         toastLayer = new Layer(a, TOAST);
         menuLayer = new Layer(a, MENU);
         recentLayer = new Layer(a, RECENT);
+        rowsLayer = new Layer(a, ROWS);   // [custom]
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         // Not on Android 8 to 11: on older GPUs (a Mi Box 3's Mali-450) redrawing and compositing a big layer on every
         // frame cost more than drawing straight to the screen (measured: focus on the picks 33 → 12 ms a frame, the
         // drawer 19 → 17 ms).
         for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer}) v.setLayerType(Ui.LEGACY ? LAYER_TYPE_NONE : LAYER_TYPE_HARDWARE, null);
-        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, menuLayer, toastLayer, recentLayer}) {
+        for (View v : new View[] {sky, heroLayer, status, platter, tiles, rowsLayer, drawerLayer, sheetLayer, menuLayer, toastLayer, recentLayer}) {   // [custom] rowsLayer
             v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);   // TalkBack reads the items (Spoken)
             addView(v);
         }
-        setContentDescription("Free My TV");
+        setContentDescription("Free My TV Enhanced");
         recentLayer.setVisibility(INVISIBLE);
         drawerLayer.setVisibility(INVISIBLE);
+        rowsLayer.setVisibility(INVISIBLE);   // [custom]
         menuLayer.setVisibility(INVISIBLE);
         for (int i = 0; i < topFocus.length; i++) {
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
@@ -701,6 +780,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         recs.addListener(this);
         data.refreshIfStale();
         recs.refreshIfStale();
+        genreRows.refreshIfStale();   // [custom]
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
         ImmichPhotos.syncIfDue(getContext(), ownReady);   // or a new choice from the Immich server, every 6 hours
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
@@ -781,9 +861,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (animated) {
             sheet.target = 0;
             drawer.target = 0;
+            rows.target = 0;   // [custom]
         } else {
             sheet.snap(0);
             drawer.snap(0);
+            rows.snap(0);      // [custom]
         }
         if (pickIndex != 0 && !picks.isEmpty()) {
             pickIndex = 0;
@@ -830,6 +912,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     @Override public void onRecs() {
         wake();
         updatePicks();
+        genreRows.refreshIfStale();   // [custom] the rows use the list's filter, known once it's made
+    }
+
+    /** [custom] New genre rows, or an image of theirs came: the rows shown, and their layer redrawn if it shows. */
+    @Override public void onGenreRows() {
+        updateGenreRows();
+        if (rowsLayer.getVisibility() == VISIBLE) rowsLayer.invalidate();
     }
 
     private void invalidateAll() {
@@ -845,13 +934,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(heroLayer, width, Math.round(790 * kk));
         // The icons at the top left need the whole width; with them off the layer keeps its old size (the corner buttons
         // only), so the GPU still composites a small layer.
-        statusWide = Prefs.statusIcons();
+        statusWide = Prefs.statusIcons() || Prefs.titleClock();   // [custom] the weather after the time is drawn there too
         measure(status, statusWide ? width : Math.round(1160 * kk), Math.round(240 * kk));
         // Sized to what they draw (the glass and its shadow; the grown tiles and their shadows): smaller layers are
         // cheaper for the GPU to composite on every frame of the drawer animation.
         measure(platter, width, Math.round(320 * kk));
         measure(tiles, width, Math.round(270 * kk));
         measure(drawerLayer, width, Math.round(600 * kk));
+        measure(rowsLayer, width, Math.round((ROWS_H + GenreRows.MAX_ROWS * GENRE_H) * kk));   // [custom] genre rows + Continue Watching
         measure(sheetLayer, width, height);
         measure(menuLayer, width, height);
         measure(toastLayer, width, Math.round(220 * kk));   // full width: a toast may sit right of a long title
@@ -872,6 +962,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         place(platter, 0, Math.round(750 * kk));
         place(tiles, 0, Math.round(790 * kk));
         place(drawerLayer, 0, Math.round(470 * kk));
+        place(rowsLayer, 0, Math.round(ROWS_AT * kk));   // [custom] below the screen until it comes up
         sheetLayer.layout(0, 0, width, height);
         menuLayer.layout(0, 0, width, height);
         sheetLayer.setPivotX(width / 2f);
@@ -922,6 +1013,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (Paint p : new Paint[] {labelPaint, titlePaint, metaPaint, clockPaint}) p.setShadowLayer(22 * k, 0, 2 * k, 0x59000000);
         lTitle = Ui.text(Ui.displaySemibold, 76 * k, L_INK);
         lTitle.setLetterSpacing(0.004f);
+        lBadge = Ui.text(Ui.semibold, 22 * k, 0xFFFFFFFF);   // [custom]
         lTab = Ui.text(Ui.medium, 30 * k, L_DIM);
         lTabOn = Ui.text(Ui.semibold, 30 * k, L_INK);
         lCardTitle = Ui.text(Ui.semibold, 31 * k, L_INK);
@@ -1019,6 +1111,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean drawerItemsMoving = step(drawerFocus, dt);
         boolean gridMoving = step(gridFocus, dt) | scroll.step(dt);
         boolean drawerMoving = drawer.step(dt);
+        boolean rowsMoving = rows.step(dt);   // [custom]
+        boolean genreMoving = false;          // [custom]
+        for (int r = 0; r < genreShown.size(); r++) genreMoving |= step(genreFocus[r], dt) | genreScroll[r].step(dt);
+        if (genreMoving) rowsLayer.invalidate();
         boolean sheetMoving = sheet.step(dt);
         boolean toastFading = tickToast(up);
         boolean heroFading = tickHeroFade(up);
@@ -1026,7 +1122,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean nightMoving = tickNight(up);
         boolean menuMoving = menu.step(dt) | menuPick.step(dt);
         if (menuMoving || nightMoving && menuOpen) menuLayer.invalidate();
-        else if (!menuOpen && menuLayer.getVisibility() == VISIBLE) menuLayer.setVisibility(INVISIBLE);
+        else if (!menuOpen && !folderShown() && menuLayer.getVisibility() == VISIBLE) menuLayer.setVisibility(INVISIBLE);   // [custom] folderShown
+        boolean folderMoving = folderAnim.step(dt);   // [custom]
+        if (folderMoving) menuLayer.invalidate();
         boolean recentMoving = recents != null && recents.step(dt);
         if (recents != null) {
             if (recents.visible() != (recentLayer.getVisibility() == VISIBLE)) recentLayer.setVisibility(recents.visible() ? VISIBLE : INVISIBLE);
@@ -1034,7 +1132,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             setUnderRecents(recents.covering());
         }
 
-        if (drawerMoving || sheetMoving || motionDirty) updateMotion();
+        if (drawerMoving || sheetMoving || motionDirty || rowsMoving) updateMotion();   // [custom] rowsMoving
+        if (rowsLayer.getVisibility() == VISIBLE && (heroMoving || heroDirty || bgFading)) rowsLayer.invalidate();   // [custom]
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
         // drop frames (measured: ~50 ms of GPU per frame). The app tiles have no glass; the top buttons fade out as
         // they rise; the drawer is drawn resting in place; the glass shelf is redrawn once the drawer stops, so the
@@ -1054,12 +1153,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (hero != null && hero.clock) {
                 refreshHero(false);
                 heroLayer.invalidate();
+            } else if (titleClock && !clockMode() && heroLayer != null) {
+                heroLayer.invalidate();   // [custom] the time as the top title
             }
             if (clockMode()) heroLayer.invalidate();
         }
 
         // Busy: something is moving, or the sheet or the drawer is open.
-        boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving
+        boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || rowsMoving || genreMoving || folderMoving   // [custom] rowsMoving, genreMoving, folderMoving
                 || menuMoving || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tintMoving || sheetOpen
                 || sheet.value > 0.001f || recentMoving || drawerOpen || drawer.value > 0.001f || toast != null || !toasts.isEmpty();
         idle = !busy;
@@ -1104,13 +1205,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float d = drawer.value, dc = Ui.clamp(d), s = Ui.clamp(sheet.value);
         float home = 1 - s, top = home * (1 - smoothstep(0, 0.32f, dc));
         float shift = SHIFT * k;
-        float lift = -d * shift;
+        float both = rowsActive() ? d * Ui.clamp(rows.value) : 0;   // [custom] a row and the drawer are both up
+        float lift = -d * shift - rows.value * ROWS_LIFT * k - both * ROWS_UP * k;   // [custom] rows: the Continue Watching row
         show(heroLayer, top, lift);
         show(status, top, lift);
         show(platter, home, lift);
         show(tiles, home, lift);
+        float ra = rows.value > 0.002f || dc > 0.002f && rowsActive() ? home : 0;   // [custom]
+        rowsLayer.setAlpha(ra);
+        rowsLayer.setTranslationY(lift);
+        rowsLayer.setVisibility(ra > 0.002f ? VISIBLE : INVISIBLE);
         float da = home * smoothstep(0.1f, 0.6f, dc);
-        drawerLayer.setTranslationY((1 - d) * shift);
+        drawerLayer.setTranslationY((1 - d) * shift + both * ROWS_DOWN * k);   // [custom] + both × ROWS_DOWN
         drawerLayer.setAlpha(da);
         drawerLayer.setVisibility(da > 0.002f ? VISIBLE : INVISIBLE);
         sheetLayer.setVisibility(s > 0.001f || sheetOpen ? VISIBLE : INVISIBLE);
@@ -2099,6 +2205,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (drawerItems.isEmpty()) return;
         drawerOpen = true;
         drawer.target = 1;
+        if (rowsActive()) rows.target = drawerLift();   // [custom] the last row stays up, above the drawer
         zone = Z_DRAWER;
         drawerIndex = shelf.isEmpty() ? 0 : nearest(drawerRects, tileRects[shelfIndex].centerX());
         for (int i = 0; i < drawerFocus.length; i++) drawerFocus[i].snap(i == drawerIndex ? 1 : 0);
@@ -2110,6 +2217,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawerOpen = false;
         drawer.target = 0;
         zone = Z_SHELF;
+        if (rowsActive() && rows.target > 0) enterSection(sections() - 1);   // [custom] back to the row it came from
         for (Spring f : drawerFocus) f.snap(0);   // the drawer goes away: its focus doesn't need to animate
         handler.removeCallbacks(homeTick);
         if (!shelf.isEmpty() && drawerIndex < drawerRects.length) shelfIndex = nearest(tileRects, drawerRects[drawerIndex].centerX());
@@ -2418,6 +2526,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Sets the springs' targets from the current focus (snap: no animation). */
     private void retarget(boolean snap) {
+        retargetGenres(snap);   // [custom] the genre rows' focus follows the zone too
         revealShelf(snap);
         // Only the group whose focus changed is redrawn (moving along the shelf doesn't redraw the hero or capsule).
         boolean tilesChanged = aim(tileFocus, !sheetOpen && zone == Z_SHELF ? shelfIndex : -1, snap);
@@ -2428,8 +2537,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (snap) heroFocus.snap(heroFocus.target);
         boolean topChanged = aim(topFocus, !sheetOpen && zone == Z_TOP ? topIndex : -1, snap);
         heroChanged |= aim(cardFocus, !sheetOpen && zone == Z_CARDS ? cardIndex : -1, snap) | topChanged;
-        heroChanged |= aim(cardOpen, cardIndex, snap);
-        float scrollTo = Math.max(0, cardIndex - 2);
+        heroChanged |= aim(cardOpen, cardHighlight ? -1 : cardIndex, snap);   // [custom] highlighted: none widens
+        float scrollTo = Math.max(0, cardIndex - (cardHighlight ? 4 : 2));    // [custom] five across, then it scrolls
         heroChanged |= cardScroll.target != scrollTo;
         cardScroll.target = scrollTo;
         if (snap) cardScroll.snap(scrollTo);
@@ -2468,6 +2577,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - "All Apps" sheet
 
     private void setOthers(List<HomeApps.Item> list) {
+        if (appMoving) return;   // [custom] a reload while an app is being moved waits for the drop
         others = list;
         gridFocus = new Spring[list.size()];
         for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(0.3f, 0.82f, 0);
@@ -2531,6 +2641,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void closeSheet() {
+        if (appMoving) dropGridMove();   // [custom] leaving All Apps keeps the app where it was moved
+        if (selecting) endSelecting();   // [custom]
         sheetOpen = false;
         sheet.target = 0;
         retarget(false);
@@ -2559,7 +2671,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawSheet(Canvas c) {
         c.drawColor(0xA8000000);
         float shift = scroll.value * GRID_ROW * k;
-        c.drawText(Ui.tr("All Apps"), w / 2f, 124 * k - shift, sheetTitle);
+        c.drawText(appMoving ? Ui.tr("Arrows move it · OK drops it · Back cancels")   // [custom]
+                : selecting ? selectingTitle() : Ui.tr("All Apps"), w / 2f, 124 * k - shift, sheetTitle);
         int n = others.size();
         if (gridLabels == null || gridLabels.length != n) {
             gridLabels = new String[n];
@@ -2577,7 +2690,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             float x = left + col * (GRID_W + GRID_GAP) * k;
             gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
             float f = gridFocus[i].value;
-            drawCard(c, others.get(i), gridCell, GRID_RADIUS * k, f, 0.08f);
+            drawCard(c, others.get(i), gridCell, GRID_RADIUS * k, f, appMoving && i == gridIndex ? 0.16f : 0.08f);   // [custom] lifted
+            if (selecting && others.get(i).kind == HomeApps.APP) drawCheck(c, cell, selected.contains(others.get(i).pkg));   // [custom]
             if (sheetOpen && i == gridIndex) focusedCell.set(cell);
             gridLabel.setColor(blend(0x99FFFFFF, 0xFFFFFFFF, Ui.clamp(f)));
             c.drawText(gridLabels[i], gridCell.centerX(), gridCell.bottom + (40 + 6 * f) * k, gridLabel);
@@ -2737,7 +2851,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             // Only read when it's shown: with the picks or the clock, Continue Watching costs nothing.
             final String mode = Prefs.topContent();
             final boolean allowed = WatchNext.allowed(c);
-            final List<WatchNext.Item> w = mode.equals(Prefs.TOP_CONTINUE) ? WatchNext.load(c) : new ArrayList<>();
+            // [custom] also for the Continue Watching row, with the same title from two apps (Nuvio Arc and One) once
+            final List<WatchNext.Item> w = mode.equals(Prefs.TOP_CONTINUE) || Prefs.cwRow()
+                    ? mergeWatching(WatchNext.load(c)) : new ArrayList<>();
             handler.post(() -> {
                 // A provider/package refresh must not cancel a drag or undo a move that was just saved.
                 boolean keepOrder = reordering || pendingOrderSaves > 0 || orderAtLoad != orderRevision;
@@ -2987,7 +3103,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The menu's row under a point, if any. */
     private int menuAt(float x, float y) {
-        for (int i = 0; i < menuOptions.length; i++) {
+        for (int i = 0; i < menuCount; i++) {
             menuRow(i, hitBox);
             if (hitBox.contains(x, y)) return i;
         }
@@ -3066,6 +3182,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     boolean onKey(KeyEvent e) {
         wake();
         if (menuOpen) return menuKey(e);
+        if (folderOpen) return folderKey(e);   // [custom]
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (recents != null && recents.isOpen()) {   // not as it fades out: an OK or ▲ then is the home screen's, not a card's
             int was = recents.focus();
@@ -3112,7 +3229,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         okDown = true;
                         okHeld = false;
                         handler.removeCallbacks(holdStart);
-                        holdArmed = sheetOpen ? canToggleShelf(gridIndex) : canReorder() || canHold();
+                        // [custom] was: sheetOpen ? canToggleShelf(gridIndex) : canReorder() || canHold() (the All Apps menu, picks' rating)
+                        holdArmed = sheetOpen ? !appMoving && gridIndex < others.size() : canReorder() || canHold() || canRate();
                         if (holdArmed) handler.postDelayed(holdStart, HOLD_MS);
                     } else if (okDown && holdArmed && e.isLongPress()) {
                         hold();
@@ -3146,12 +3264,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void back() {
-        if (sheetOpen) {
+        if (sheetOpen && appMoving) {   // [custom] Back puts the moved app where it was
+            cancelGridMove();
+        } else if (sheetOpen && selecting) {   // [custom] Back ends Select several
+            endSelecting();
+        } else if (sheetOpen) {
             closeSheet();
         } else if (zone == Z_DRAWER || zone == WIDGETS) {
             closeDrawer();
             retarget(false);
         } else if (zone != Z_SHELF) {
+            if (zone == Z_WATCH || zone == Z_GENRE) rows.target = 0;   // [custom] leaving the rows lowers them
             zone = Z_SHELF;
             retarget(false);
         } else {
@@ -3161,10 +3284,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void move(int dx, int dy) {
+        if (sheetOpen && appMoving) {   // [custom]
+            moveGridApp(dx, dy);
+            return;
+        }
         if (sheetOpen) {
             moveGrid(dx, dy);
             return;
         }
+        if (zone == Z_GENRE && dx != 0) {   // [custom] along a genre row
+            moveGenre(dx);
+            return;
+        }
+        if (dy != 0 && rowsActive() && (zone == Z_WATCH || zone == Z_GENRE || zone == Z_SHELF && dy > 0) && moveRows(dy)) return;   // [custom]
         if (moveLight(dx, dy)) return;
         switch (zone) {
             case Z_SHELF:
@@ -3311,9 +3443,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void activate() {
+        if (sheetOpen && appMoving) {   // [custom] OK drops the moved app
+            dropGridMove();
+            return;
+        }
         wake();
         if (reordering) {   // TalkBack's click while moving an app: drop it
             dropReorder();
+            return;
+        }
+        if (sheetOpen && selecting && !menuOpen) {   // [custom] OK ticks or unticks the app
+            if (gridIndex < others.size()) toggleSelected(others.get(gridIndex));
             return;
         }
         if (menuOpen) {
@@ -3347,6 +3487,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             it = lightButtons.get(topIndex - 3);
             r = topRects[topIndex];
+        } else if (zone == Z_GENRE) {   // [custom]
+            openGenreItem();
+            return;
         } else if (zone == Z_WATCH) {
             if (watchIndex >= watching.size()) return;
             click.open();
@@ -3355,6 +3498,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_CARDS) {
             Recs.Pick p = cardIndex < cards.size() ? cards.get(cardIndex) : null;
             if (p == null || p.pkg == null) return;
+            if (showOpenWith(p)) return;   // [custom] two or more apps chosen: ask which one
             it = HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
             r = cardRects[cardIndex];
         } else {
@@ -3363,6 +3507,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             r = tileRects[shelfIndex];
         }
         click.open();
+        if (it.kind == HomeApps.FOLDER) {   // [custom] the folder grows out of its tile
+            openFolder(it, r);
+            return;
+        }
         if (it.kind == HomeApps.RECENTS) {
             openRecents();
             return;
@@ -3389,7 +3537,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void hold() {
         if (sheetOpen) {
-            toggleShelf();
+            if (appMoving) return;   // [custom]
+            handler.removeCallbacks(holdStart);
+            holdArmed = false;
+            okHeld = true;      // the release must not open the app
+            okDown = false;     // the menu gets keys now
+            showAppMenu();      // [custom] was toggleShelf(): Move, Add to / Remove from shelf, App info
         } else if (canReorder()) {
             startReorder();
         } else if (canHold()) {
@@ -3397,6 +3550,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             holdArmed = false;
             okDown = false;     // the menu gets keys now: this press's release must not pick an option
             showMenu();
+        } else if (canRate()) {   // [custom] Your taste
+            handler.removeCallbacks(holdStart);
+            holdArmed = false;
+            okHeld = true;      // the release must not open the pick
+            okDown = false;
+            showRateMenu(zone == Z_GENRE ? genreItems.get(genreSection).get(genreItem[genreSection]) : cards.get(cardIndex));
         }
     }
 
@@ -3441,7 +3600,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 text = Ui.trf("Removed from the shelf: {app}", "app", it.label);
             } else {
                 if (shown >= max) {
-                    handler.post(() -> showToast(Ui.tr("The shelf is full. Make room in Free My TV › Shelf.")));
+                    handler.post(() -> showToast(Ui.tr("The shelf is full. Make room in Free My TV Enhanced › Shelf.")));
                     return;
                 }
                 list.add(it.pkg);
@@ -3454,6 +3613,630 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 reload();
             });
         });
+    }
+
+    // MARK: - [custom] Your taste: Love it / Not for me on a held pick (Taste, ENHANCED.md phase 4)
+
+    private boolean canRate() {
+        if (zone == Z_GENRE && !sheetOpen && !drawerOpen && genreSection < genreItems.size()) return true;
+        return zone == Z_CARDS && !sheetOpen && !drawerOpen && picksMode() && cardIndex < cards.size() && cards.get(cardIndex).id > 0;
+    }
+
+    private void showRateMenu(Recs.Pick p) {
+        if (menuOpen || menuTitlePaint == null || p.id <= 0) return;
+        float width = (MENU_W - 2 * MENU_PAD) * k;
+        menuItem = null;
+        menuOpenPick = null;
+        menuAppItem = null;
+        menuRatePick = p;
+        menuTitle = TextUtils.ellipsize(p.title, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
+        menuSub = Taste.on() ? "" : Ui.tr("Used when Suggestions is Your taste");
+        menuOptions[0] = Ui.tr("Love it");
+        menuOptions[1] = Ui.tr("Not for me");
+        menuOptions[2] = Ui.tr("Cancel");
+        menuCount = 3;
+        layoutMenu();
+        menuOpen = true;
+        menuIndex = 0;
+        menuPick.snap(0);
+        menu.target = 1;
+        menuLayer.setVisibility(VISIBLE);
+        menuLayer.invalidate();
+        wake();
+        click.open();
+        spoken.focusMoved();
+    }
+
+    /** Saved quietly (no restart); the picks are fetched again with the new taste (its stamp changed). */
+    private void ratePick(Recs.Pick p, int choice) {
+        if (choice == 0) {
+            Prefs.loveTitle(Recs.key(p), p.title);
+            showToast(Ui.trf("More like {title} coming up.", "title", p.title));
+        } else if (choice == 1) {
+            Prefs.notForMe(Recs.key(p));
+            showToast(Ui.trf("{title} won't be suggested again.", "title", p.title));
+        } else {
+            click.move();
+            return;
+        }
+        click.open();
+        recs.refreshIfStale();
+    }
+
+    // MARK: - [custom] All Apps: the menu of a held app (Move, Add to / Remove from shelf, App info), ENHANCED.md
+
+    private void showAppMenu() {
+        if (menuOpen || menuTitlePaint == null || gridIndex >= others.size()) return;
+        HomeApps.Item it = others.get(gridIndex);
+        if (selecting) {   // [custom] what to do with the ticked apps
+            showBulkMenu(it);
+            return;
+        }
+        if (it.kind == HomeApps.FOLDER) {
+            showFolderMenu(it);
+            return;
+        }
+        float width = (MENU_W - 2 * MENU_PAD) * k;
+        menuItem = null;
+        menuOpenPick = null;
+        menuAppItem = it;
+        menuTitle = TextUtils.ellipsize(it.label, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
+        menuSub = "";
+        int n = 0;
+        menuOptions[n++] = Ui.tr("Move");
+        if (canToggleShelf(gridIndex)) {
+            menuOptions[n++] = HomeApps.shelfPackages(getContext()).contains(it.pkg) ? Ui.tr("Remove from the shelf") : Ui.tr("Add to the shelf");
+        }
+        if (it.kind == HomeApps.APP && it.pkg != null) menuOptions[n++] = Ui.tr("Add to folder");   // [custom] phase 6
+        if (it.kind == HomeApps.APP && it.pkg != null) menuOptions[n++] = Ui.tr("Select several");   // [custom]
+        if (it.kind == HomeApps.APP && it.pkg != null) menuOptions[n++] = Ui.tr("App info");
+        menuOptions[n++] = Ui.tr("Cancel");
+        menuCount = n;
+        layoutMenu();
+        menuOpen = true;
+        menuIndex = 0;
+        menuPick.snap(0);
+        menu.target = 1;
+        menuLayer.setVisibility(VISIBLE);
+        menuLayer.invalidate();
+        wake();
+        click.open();
+        spoken.focusMoved();
+    }
+
+    private void pickAppMenu(HomeApps.Item it, int choice) {
+        String option = choice < menuCount ? menuOptions[choice] : "";
+        if (menuMode != M_APP) {
+            pickFolderMenu(it, choice, option);
+            return;
+        }
+        if (option.equals(Ui.tr("Add to folder"))) {
+            bulkPkgs.clear();
+            showFolderPicker(it);
+            return;
+        }
+        if (option.equals(Ui.tr("Select several"))) {   // [custom]
+            selecting = true;
+            selected.clear();
+            selected.add(it.pkg);
+            gridDirty = true;
+            sheetLayer.invalidate();
+            click.open();
+            return;
+        }
+        if (option.equals(Ui.tr("Move"))) {
+            startGridMove();
+        } else if (option.equals(Ui.tr("Add to the shelf")) || option.equals(Ui.tr("Remove from the shelf"))) {
+            toggleShelf();
+        } else if (option.equals(Ui.tr("App info"))) {
+            openAppInfo(it);
+        } else {
+            click.move();
+        }
+    }
+
+    /** The app's page in the TV's settings (force stop, storage, uninstall); a toast if the TV has none. */
+    private void openAppInfo(HomeApps.Item it) {
+        click.open();
+        try {
+            activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", it.pkg, null))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (ActivityNotFoundException | SecurityException e) {
+            AppLog.w("app info for " + it.pkg + ": " + e.getMessage());
+            showToast(Ui.trf("Couldn't open {app}.", "app", Ui.tr("App info")));
+        }
+    }
+
+    private void startGridMove() {
+        if (gridIndex >= others.size()) return;
+        gridMoveOrigin = new ArrayList<>(others);
+        appMoving = true;
+        gridDirty = true;
+        sheetLayer.invalidate();
+        click.open();
+    }
+
+    /** The lifted app trades places with its neighbor in that direction (rows: the app below or above it). */
+    private void moveGridApp(int dx, int dy) {
+        int n = others.size(), r = gridIndex / COLUMNS, col = gridIndex % COLUMNS;
+        int next = gridIndex;
+        if (dx != 0) {
+            int candidate = gridIndex + dx;
+            if (candidate >= 0 && candidate < n && candidate / COLUMNS == r) next = candidate;
+        } else {
+            int candidate = (r + dy) * COLUMNS + col;
+            if (candidate >= 0 && candidate < n) next = candidate;
+        }
+        if (next == gridIndex) return;
+        List<HomeApps.Item> list = new ArrayList<>(others);
+        list.add(next, list.remove(gridIndex));
+        others = list;
+        Spring moving = gridFocus[gridIndex];   // the focus travels with the app
+        gridFocus[gridIndex] = gridFocus[next];
+        gridFocus[next] = moving;
+        gridLabels = null;
+        gridIndex = next;
+        retargetGrid(false);
+        click.move();
+        gridDirty = true;
+    }
+
+    private void dropGridMove() {
+        appMoving = false;
+        gridMoveOrigin = null;
+        List<String> keys = new ArrayList<>();
+        for (HomeApps.Item it : others) if (it.key != null) keys.add(it.key);
+        Prefs.setAllAppsOrder(keys);
+        gridDirty = true;
+        click.open();
+    }
+
+    private void cancelGridMove() {
+        appMoving = false;
+        if (gridMoveOrigin != null) {
+            HomeApps.Item moved = others.get(gridIndex);
+            setOthers(gridMoveOrigin);
+            gridIndex = Math.max(0, others.indexOf(moved));
+            retargetGrid(true);
+        }
+        appMoving = false;
+        gridMoveOrigin = null;
+        gridDirty = true;
+    }
+
+    // MARK: - [custom] Folders (Folders, ENHANCED.md phase 6)
+
+    /** Opens a menu of the app menu's kind, with these options (the last is Cancel). */
+    private void openMenuOf(int mode, HomeApps.Item it, String title, String sub, List<String> options) {
+        float width = (MENU_W - 2 * MENU_PAD) * k;
+        menuItem = null;
+        menuOpenPick = null;
+        menuRatePick = null;
+        menuAppItem = it;
+        menuTitle = TextUtils.ellipsize(title, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
+        menuSub = sub;
+        menuCount = Math.min(menuOptions.length, options.size());
+        for (int i = 0; i < menuCount; i++) menuOptions[i] = options.get(i);
+        menuMode = mode;
+        layoutMenu();
+        menuOpen = true;
+        menuIndex = 0;
+        menuPick.snap(0);
+        menu.target = 1;
+        menuLayer.setVisibility(VISIBLE);
+        menuLayer.invalidate();
+        wake();
+        click.open();
+        spoken.focusMoved();
+    }
+
+    /** Add to folder: every folder there is (but the one the app is already in), New folder, Cancel. For bulkPkgs
+     *  when there are some (Select several), else for the app. */
+    private void showFolderPicker(HomeApps.Item app) {
+        menuFolders.clear();
+        for (Folders.Folder f : Folders.all()) {
+            if (bulkPkgs.isEmpty() && f.apps.contains(app.pkg)) continue;
+            if (menuFolders.size() < menuOptions.length - 3) menuFolders.add(f);   // 11 rows fit the screen
+        }
+        List<String> options = new ArrayList<>();
+        for (Folders.Folder f : menuFolders) options.add(f.name);
+        options.add(Ui.tr("New folder"));
+        options.add(Ui.tr("Cancel"));
+        String title = bulkPkgs.size() > 1 ? Ui.trf("{n} apps", "n", bulkPkgs.size()) : app.label;
+        openMenuOf(M_FOLDER_PICK, app, title, Ui.tr("Add to folder"), options);
+    }
+
+    /** [custom] Held OK while selecting in All Apps. */
+    private void showBulkMenu(HomeApps.Item it) {
+        int n = selected.size();
+        List<String> options = new ArrayList<>();
+        if (n > 0) {
+            options.add(Ui.tr("Add to folder"));
+            options.add(Ui.tr("Add to the shelf"));
+            options.add(Ui.tr("Clear the selection"));
+        }
+        options.add(Ui.tr("Done"));
+        options.add(Ui.tr("Cancel"));
+        openMenuOf(M_BULK, it, Ui.trf("{n} selected", "n", n), "", options);
+    }
+
+    /** [custom] Held OK while selecting in an open folder. */
+    private void showFolderBulkMenu(HomeApps.Item it) {
+        int n = selected.size();
+        List<String> options = new ArrayList<>();
+        if (n > 0) {
+            options.add(Ui.tr("Remove from folder"));
+            options.add(Ui.tr("Move to another folder"));
+        }
+        options.add(Ui.tr("Done"));
+        options.add(Ui.tr("Cancel"));
+        openMenuOf(M_FOLDER_BULK, it, Ui.trf("{n} selected", "n", n), folderItem.label, options);
+    }
+
+    private String selectingTitle() {
+        return Ui.trf("{n} selected · OK ticks · Hold OK for actions · Back ends", "n", selected.size());
+    }
+
+    private void toggleSelected(HomeApps.Item it) {
+        if (it.kind != HomeApps.APP || it.pkg == null) {
+            click.move();
+            return;
+        }
+        if (!selected.remove(it.pkg)) selected.add(it.pkg);
+        click.open();
+        gridDirty = true;
+        sheetLayer.invalidate();
+        menuLayer.invalidate();
+        spoken.focusMoved();
+    }
+
+    private void endSelecting() {
+        selecting = false;
+        folderSelecting = false;
+        selected.clear();
+        bulkPkgs.clear();
+        gridDirty = true;
+        sheetLayer.invalidate();
+        menuLayer.invalidate();
+    }
+
+    /** A tick in the card's top right corner: filled when ticked, an empty ring when not. */
+    private void drawCheck(Canvas c, RectF card, boolean on) {
+        float r = 20 * k, cx = card.right - r - 12 * k, cy = card.top + r + 12 * k;
+        checkFill.setStyle(Paint.Style.FILL);
+        checkFill.setColor(on ? 0xFF2F7CF6 : 0x66000000);
+        c.drawCircle(cx, cy, r, checkFill);
+        checkLine.setStyle(Paint.Style.STROKE);
+        checkLine.setStrokeCap(Paint.Cap.ROUND);
+        checkLine.setStrokeWidth(4 * k);
+        checkLine.setColor(0xFFFFFFFF);
+        if (on) {
+            c.drawLine(cx - 9 * k, cy, cx - 3 * k, cy + 7 * k, checkLine);
+            c.drawLine(cx - 3 * k, cy + 7 * k, cx + 10 * k, cy - 7 * k, checkLine);
+        } else {
+            c.drawCircle(cx, cy, r - 2 * k, checkLine);
+        }
+    }
+
+    /** A folder's own menu in All Apps. */
+    private void showFolderMenu(HomeApps.Item folder) {
+        List<String> options = new ArrayList<>();
+        options.add(Ui.tr("Move"));
+        options.add(Ui.tr("Rename"));
+        options.add(HomeApps.shelfPackages(getContext()).contains(folder.key) ? Ui.tr("Remove from the shelf") : Ui.tr("Add to the shelf"));
+        options.add(Ui.tr("Delete folder"));
+        options.add(Ui.tr("Cancel"));
+        openMenuOf(M_FOLDER, folder, folder.label, "", options);
+    }
+
+    /** Held OK on an app inside the open folder. */
+    private void showInFolderMenu() {
+        if (!folderOpen || folderIndex >= folderApps.size() || menuOpen) return;
+        HomeApps.Item app = folderApps.get(folderIndex);
+        if (folderSelecting) {   // [custom]
+            showFolderBulkMenu(app);
+            return;
+        }
+        List<String> options = new ArrayList<>();
+        options.add(Ui.tr("Remove from folder"));
+        options.add(Ui.tr("Move to another folder"));   // [custom]
+        options.add(Ui.tr("Select several"));            // [custom]
+        options.add(Ui.tr("Cancel"));
+        openMenuOf(M_IN_FOLDER, app, app.label, folderItem.label, options);
+    }
+
+    private void pickFolderMenu(HomeApps.Item it, int choice, String option) {
+        if (option.equals(Ui.tr("Cancel")) || option.isEmpty()) {
+            click.move();
+            return;
+        }
+        click.open();
+        String folderId = it.key != null && it.key.startsWith(Folders.PREFIX) ? it.key.substring(Folders.PREFIX.length()) : null;
+        if (menuMode == M_FOLDER_PICK) {
+            final List<String> pkgs = bulkPkgs.isEmpty() ? java.util.Collections.singletonList(it.pkg) : new ArrayList<>(bulkPkgs);
+            if (choice < menuFolders.size()) {
+                Folders.addAll(menuFolders.get(choice).id, pkgs);
+                showToast(Ui.trf("Added to {folder}.", "folder", menuFolders.get(choice).name));
+                afterFolderPick();
+            } else {
+                askName(Ui.tr("New folder"), Ui.trf("Folder {n}", "n", Folders.all().size() + 1), name -> {
+                    Folders.Folder f = Folders.create(name, pkgs);
+                    showToast(Ui.trf("Added to {folder}.", "folder", f.name));
+                    afterFolderPick();
+                });
+            }
+        } else if (menuMode == M_BULK) {   // [custom] Select several in All Apps
+            if (option.equals(Ui.tr("Add to folder"))) {
+                bulkPkgs.clear();
+                bulkPkgs.addAll(selected);
+                showFolderPicker(it);
+            } else if (option.equals(Ui.tr("Add to the shelf"))) {
+                List<String> shelfKeys = new ArrayList<>(HomeApps.shelfPackages(getContext()));
+                int added = 0;
+                for (String pkg : selected) if (!shelfKeys.contains(pkg)) { shelfKeys.add(pkg); added++; }
+                Prefs.setShelf(shelfKeys);
+                shelfEdited = true;
+                showToast(Ui.trf("{n} added to the shelf.", "n", added));
+                endSelecting();
+                foldersChanged();
+            } else if (option.equals(Ui.tr("Clear the selection"))) {
+                selected.clear();
+                gridDirty = true;
+                sheetLayer.invalidate();
+            } else {   // Done
+                endSelecting();
+            }
+        } else if (menuMode == M_FOLDER_BULK) {   // [custom] Select several in a folder
+            if (option.equals(Ui.tr("Remove from folder"))) {
+                for (String pkg : selected) Folders.remove(pkg);
+                showToast(Ui.trf("{n} back in All Apps.", "n", selected.size()));
+                endSelecting();
+                refreshOpenFolder();
+                foldersChanged();
+            } else if (option.equals(Ui.tr("Move to another folder"))) {
+                bulkPkgs.clear();
+                bulkPkgs.addAll(selected);
+                showFolderPicker(it);
+            } else {   // Done
+                endSelecting();
+            }
+        } else if (menuMode == M_FOLDER) {
+            if (option.equals(Ui.tr("Move"))) {
+                startGridMove();
+            } else if (option.equals(Ui.tr("Rename"))) {
+                askName(Ui.tr("Rename"), it.label, name -> {
+                    Folders.rename(folderId, name);
+                    foldersChanged();
+                });
+            } else if (option.equals(Ui.tr("Delete folder"))) {
+                Folders.delete(folderId);
+                List<String> shelfKeys = new ArrayList<>(HomeApps.shelfPackages(getContext()));
+                if (shelfKeys.remove(it.key)) Prefs.setShelf(shelfKeys);
+                showToast(Ui.trf("{folder} deleted; its apps are back in All Apps.", "folder", it.label));
+                foldersChanged();
+            } else {   // Add to / Remove from the shelf
+                List<String> shelfKeys = new ArrayList<>(HomeApps.shelfPackages(getContext()));
+                if (!shelfKeys.remove(it.key)) shelfKeys.add(it.key);
+                Prefs.setShelf(shelfKeys);
+                shelfEdited = true;
+                foldersChanged();
+            }
+        } else if (menuMode == M_IN_FOLDER) {
+            if (option.equals(Ui.tr("Move to another folder"))) {   // [custom]
+                bulkPkgs.clear();
+                bulkPkgs.add(it.pkg);
+                showFolderPicker(it);
+                return;
+            }
+            if (option.equals(Ui.tr("Select several"))) {   // [custom]
+                folderSelecting = true;
+                selected.clear();
+                selected.add(it.pkg);
+                menuLayer.invalidate();
+                return;
+            }
+            Folders.remove(it.pkg);
+            showToast(Ui.trf("{app} is back in All Apps.", "app", it.label));
+            refreshOpenFolder();
+            foldersChanged();
+        }
+    }
+
+    /** [custom] After apps went into a folder: selection over, the open folder (if any) and the lists again. */
+    private void afterFolderPick() {
+        endSelecting();
+        refreshOpenFolder();
+        foldersChanged();
+    }
+
+    private void refreshOpenFolder() {
+        if (!folderOpen) return;
+        Folders.Folder f = folderItem == null ? null : Folders.byKey(Folders.all(), folderItem.key);
+        if (f == null) closeFolder();
+        else fillFolder(f);
+    }
+
+    /** The name, typed with the TV's keyboard in a small system dialog. */
+    private void askName(String title, String initial, java.util.function.Consumer<String> done) {
+        android.widget.EditText field = new android.widget.EditText(activity);
+        field.setSingleLine();
+        field.setText(initial);
+        field.setSelectAllOnFocus(true);
+        new android.app.AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(title)
+                .setView(field)
+                .setPositiveButton(Ui.tr("OK"), (d, w) -> done.accept(field.getText().toString()))
+                .setNegativeButton(Ui.tr("Cancel"), null)
+                .show();
+    }
+
+    /** All Apps and the shelf again, now (All Apps may be open: it isn't left for later). */
+    private void foldersChanged() {
+        final Context c = getContext().getApplicationContext();
+        LOADER.execute(() -> {
+            List<HomeApps.Item> o = HomeApps.others(c);
+            handler.post(() -> {
+                if (!appMoving) setOthers(o);
+                gridDirty = true;
+                reload();
+            });
+        });
+    }
+
+    private boolean folderShown() {
+        return folderOpen || folderAnim.value > 0.002f;
+    }
+
+    private void fillFolder(Folders.Folder f) {
+        folderApps.clear();
+        PackageManager pm = getContext().getPackageManager();
+        for (String pkg : f.apps) {
+            android.content.Intent launch = HomeApps.launchIntent(pm, pkg);
+            if (launch == null) continue;
+            android.content.pm.ResolveInfo ri = pm.resolveActivity(launch, 0);
+            HomeApps.Item it = HomeApps.app(pkg, ri != null ? String.valueOf(ri.loadLabel(pm)) : pkg);
+            it.setTile(HomeApps.tileFor(getContext(), pkg));
+            folderApps.add(it);
+        }
+        folderIndex = Math.min(folderIndex, Math.max(0, folderApps.size() - 1));
+        layoutFolder();
+        menuLayer.invalidate();
+    }
+
+    private void openFolder(HomeApps.Item it, RectF from) {
+        Folders.Folder f = Folders.byKey(Folders.all(), it.key);
+        if (f == null) return;
+        folderItem = it;
+        folderIndex = 0;
+        folderFrom.set(from);
+        fillFolder(f);
+        folderOpen = true;
+        folderAnim.target = 1;
+        menuLayer.setVisibility(VISIBLE);
+        menuLayer.invalidate();
+        wake();
+    }
+
+    private void closeFolder() {
+        if (!folderOpen) return;
+        if (folderSelecting) endSelecting();   // [custom]
+        folderOpen = false;
+        folderAnim.target = 0;   // it shrinks back into its tile
+        handler.removeCallbacks(folderHold);
+        menuLayer.invalidate();
+        wake();
+    }
+
+    private static final int F_COLUMNS = 4;
+
+    /** The panel: four apps across, centered, as many rows as it takes (up to the screen). */
+    private void layoutFolder() {
+        int n = Math.max(1, folderApps.size()), rows = Math.min(3, (n + F_COLUMNS - 1) / F_COLUMNS);
+        int cols = Math.min(F_COLUMNS, n);
+        float pw = (cols * GRID_W + (cols - 1) * GRID_GAP + 2 * 60) * k;
+        float ph = (110 + rows * GRID_ROW + 30) * k;
+        folderPanel.set((w - pw) / 2f, (h - ph) / 2f, (w + pw) / 2f, (h + ph) / 2f);
+    }
+
+    private void folderCell(int i, RectF out) {
+        int col = i % F_COLUMNS, row = i / F_COLUMNS;
+        float x = folderPanel.left + (60 + col * (GRID_W + GRID_GAP)) * k, y = folderPanel.top + (110 + row * GRID_ROW) * k;
+        out.set(x, y, x + GRID_W * k, y + GRID_H * k);
+    }
+
+    /**
+     * Apple TV's folder: the panel grows out of the folder's tile (its place, size and corners), the screen dims behind
+     * it, and the apps fade in once it's nearly open; closing runs it backward. Dark glass, drawn only while it shows.
+     */
+    private void drawFolder(Canvas c) {
+        float v = folderAnim.value, a = Ui.clamp(v);
+        if (a <= 0.002f || folderItem == null) return;
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(0xB3000000, a));
+        c.drawRect(screen, fill);
+        tmp.set(folderFrom.left + (folderPanel.left - folderFrom.left) * v, folderFrom.top + (folderPanel.top - folderFrom.top) * v,
+                folderFrom.right + (folderPanel.right - folderFrom.right) * v, folderFrom.bottom + (folderPanel.bottom - folderFrom.bottom) * v);
+        float r = (GRID_RADIUS + (44 - GRID_RADIUS) * a) * k;
+        shadowDeep.setColor(Ui.alpha(0xFF000000, 0.5f * a));
+        shadows.draw(c, tmp, r, DEEP_BLUR * k, shadowDeep);
+        fill.setColor(Ui.alpha(0xF21C1C1F, Math.max(a, 0.6f)));
+        c.drawRoundRect(tmp, r, r, fill);
+        border.setColor(Ui.alpha(0x26FFFFFF, a));
+        c.drawRoundRect(tmp, r, r, border);
+        float content = Ui.clamp((v - 0.55f) / 0.45f);
+        if (content <= 0.01f) return;
+        sheetTitle.setAlpha(Math.round(255 * content));
+        c.drawText(folderItem.label, folderPanel.centerX(), folderPanel.top + 70 * k, sheetTitle);
+        sheetTitle.setAlpha(255);
+        for (int i = 0; i < folderApps.size() && i < 3 * F_COLUMNS; i++) {
+            folderCell(i, gridCell);
+            float f = folderOpen && i == folderIndex ? 1 : 0;
+            drawCard(c, folderApps.get(i), gridCell, GRID_RADIUS * k, f * content, 0.08f);
+            if (folderSelecting) drawCheck(c, cell, selected.contains(folderApps.get(i).pkg));   // [custom]
+            gridLabel.setColor(Ui.alpha(f > 0 ? 0xFFFFFFFF : 0x99FFFFFF, content));
+            c.drawText(gridLabelFor(folderApps.get(i)), gridCell.centerX(), gridCell.bottom + 40 * k, gridLabel);
+        }
+    }
+
+    private String gridLabelFor(HomeApps.Item it) {
+        return TextUtils.ellipsize(it.label, gridLabel, (GRID_W - 10) * k, TextUtils.TruncateAt.END).toString();
+    }
+
+    private boolean folderKey(KeyEvent e) {
+        boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+        int n = folderApps.size();
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down && n > 0) {
+                    int code = e.getKeyCode();
+                    int d = code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1
+                            : code == KeyEvent.KEYCODE_DPAD_UP ? -F_COLUMNS : F_COLUMNS;
+                    int next = folderIndex + d;
+                    if (next >= 0 && next < Math.min(n, 3 * F_COLUMNS) && (d == 1 || d == -1 ? next / F_COLUMNS == folderIndex / F_COLUMNS : true)) {
+                        folderIndex = next;
+                        click.move();
+                        menuLayer.invalidate();
+                    }
+                }
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (down) {
+                    if (e.getRepeatCount() == 0) {
+                        folderHeld = false;
+                        handler.postDelayed(folderHold, HOLD_MS);
+                    }
+                } else {
+                    handler.removeCallbacks(folderHold);
+                    if (!folderHeld && folderSelecting && folderIndex < n) {   // [custom] OK ticks
+                        toggleSelected(folderApps.get(folderIndex));
+                    } else if (!folderHeld && folderIndex < n) {
+                        HomeApps.Item app = folderApps.get(folderIndex);
+                        folderCell(folderIndex, gridCell);
+                        click.open();
+                        closeFolder();
+                        if (!HomeApps.open(activity, app, this, Math.round(gridCell.left), Math.round(gridCell.top),
+                                Math.round(gridCell.width()), Math.round(gridCell.height()))) {
+                            showToast(Ui.trf("Couldn't open {app}.", "app", app.label));
+                        }
+                    }
+                    folderHeld = false;
+                }
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+                if (!down) {
+                    if (folderSelecting) endSelecting();   // [custom]
+                    else closeFolder();
+                    click.move();
+                }
+                return true;
+            default:
+                return false;
+        }
     }
 
     // MARK: - Moving shelf apps and top buttons
@@ -3716,7 +4499,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (menuOpen) {
-            for (int i = 0; i < menuOptions.length; i++) out.add(a11yId(MENU_ITEMS, i));
+            for (int i = 0; i < menuCount; i++) out.add(a11yId(MENU_ITEMS, i));
             return;
         }
         if (sheetOpen) {
@@ -3739,9 +4522,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (!recentsOpen()) return "";
                 return recents.count() == 0 ? Ui.tr("Recent Apps") + ". " + recents.emptyText() : recents.spoken(i);
             case MENU_ITEMS:
-                if (!menuOpen || i >= menuOptions.length) return "";
+                if (!menuOpen || i >= menuCount) return "";
                 return (i == 0 && menuItem != null ? menuItem.title + ". " : "") + menuOptions[i] + ", "
-                        + Ui.trf("{i} of {n}", "i", i + 1, "n", menuOptions.length);
+                        + Ui.trf("{i} of {n}", "i", i + 1, "n", menuCount);
             case GRID:
                 if (i >= others.size()) return "";
                 return label(others, i) + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", others.size());
@@ -3786,7 +4569,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 dy = 0;
                 break;
             case MENU_ITEMS:
-                if (!menuOpen || i >= menuOptions.length) return false;
+                if (!menuOpen || i >= menuCount) return false;
                 menuRow(i, a11yRect);
                 dy = 0;
                 break;
@@ -3912,7 +4695,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (menuOpen) {
-            if (group == MENU_ITEMS && i < menuOptions.length && i != menuIndex) moveMenu(i - menuIndex);
+            if (group == MENU_ITEMS && i < menuCount && i != menuIndex) moveMenu(i - menuIndex);
             return;
         }
         if (group == GRID) {
@@ -4055,6 +4838,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         Symbols.warmWeather(getContext(), 40 * k);
+        Symbols.warmWeather(getContext(), 34 * k);   // [custom] the weather after "For You"
         heroDirty = statusDirty = true;
         layoutCards();
     }
@@ -4074,6 +4858,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the focused one. */
     private void updateCards() {
         cardSlots = Prefs.cards();
+        cardHighlight = Prefs.cardHighlight();   // [custom]
+        cwRow = Prefs.cwRow();                   // [custom]
+        titleClock = Prefs.titleClock();         // [custom]
         if (!picksMode()) {
             // No picks on screen: no cards, and the plain gradient behind, or with the clock your photo if there is one.
             if (!cards.isEmpty()) cards = new ArrayList<>();
@@ -4105,6 +4892,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (b != null || (cards.isEmpty() && !own)) showBackdrop(b);
         heroDirty = true;
         spoken.focusMoved();    // new picks under the focused card
+        updateGenreRows();      // [custom] the rows leave out what the picks show
     }
 
     /** Your photo's background is ready (or new photos came in): draw it. */
@@ -4140,7 +4928,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // The permission (granted or taken back) and the first read change what an empty row says: redraw for those.
         boolean textChanged = allowed != watchAllowed || !watchLoaded && mode.equals(Prefs.TOP_CONTINUE);
         watchAllowed = allowed;
-        if (mode.equals(Prefs.TOP_CONTINUE)) watchLoaded = true;
+        if (mode.equals(Prefs.TOP_CONTINUE) || cwRow) watchLoaded = true;   // [custom] cwRow
         if (!modeChanged && !listChanged) {
             if (textChanged) heroDirty = true;
             return;
@@ -4148,6 +4936,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         topMode = mode;
         if (modeChanged) closeMenu(false);
         watching = list;
+        fixRows();   // [custom] the Continue Watching row came or went
         watchTitles = null;
         watchIndex = Math.min(watchIndex, Math.max(0, list.size() - 1));
         boolean lost = zone == Z_WATCH && list.isEmpty() || !picksMode() && (zone == Z_CARDS || zone == Z_TOP && topIndex < 3);
@@ -4176,7 +4965,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Card i's place on screen (without its focus growth), scrolled with the row. */
     private void watchRect(int i, RectF out) {
         float step = (WatchArt.W + WATCH_GAP) * k;
-        float x = MARGIN * k + i * step - watchScroll.value * step, y = L_CARDS_TOP * k;
+        float x = MARGIN * k + i * step - watchScroll.value * step;
+        float y = (cwRowActive() ? cwTop() + 70 : L_CARDS_TOP) * k;   // [custom] the row under the shelf
         out.set(x, y, x + WatchArt.W * k, y + WatchArt.H * k);
     }
 
@@ -4220,7 +5010,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Cards scrolled past the left margin slide out under this edge instead of leaving a sliver there (the first
         // card's focus growth and shadow still fit).
         c.save();
-        c.clipRect(watchLeftEdge(), 0, w, h);
+        c.clipRect(watchLeftEdge(), 0, w, cwRowActive() ? (cwTop() + ROWS_H) * k : h);   // [custom] the row's layer sits below h
         for (int i = 0; i < watching.size(); i++) if (i != top) drawWatchCard(c, i);
         if (top >= 0) drawWatchCard(c, top);
         c.restore();
@@ -4372,10 +5162,309 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
+    // MARK: - [custom] Continue Watching as its own row under the shelf (ENHANCED.md phase 3)
+
+    /** The row is on, the picks are at the top (with Continue Watching at the top there is no row), and it has cards. */
+    private boolean cwRowActive() {
+        return cwRow && picksMode() && !watching.isEmpty();
+    }
+
+    // [custom] The rows under the shelf, as sections: Continue Watching (cwRowActive) first, then the genre rows (genreShown).
+
+    private int sections() {
+        return genreShown.size() + (cwRowActive() ? 1 : 0);
+    }
+
+    private boolean rowsActive() {
+        return picksMode() && sections() > 0;
+    }
+
+    private float sectionTop(int s) {
+        return cwRowActive() ? (s == 0 ? ROWS_AT : genreTop(s - 1)) : genreTop(s);
+    }
+
+    private float cwTop() {
+        return ROWS_AT;
+    }
+
+    /** Genre row r's top: under the Continue Watching row when it shows. */
+    private float genreTop(int r) {
+        return ROWS_AT + (cwRowActive() ? ROWS_H : 0) + r * GENRE_H;
+    }
+
+    /**
+     * With the drawer open: the last row just above it, the same gap whatever its height (a genre row is shorter than
+     * Continue Watching, whose height the drawer's place was set for).
+     */
+    private float drawerLift() {
+        int last = sections() - 1;
+        float height = cwRowActive() && last == 0 ? ROWS_H : GENRE_H;
+        return liftFor(last) - (ROWS_H - height) / ROWS_LIFT;
+    }
+
+    /** rows' target (in ROWS_LIFT units) that brings section s's top to ROWS_FOCUS. */
+    private float liftFor(int s) {
+        return (sectionTop(s) - ROWS_FOCUS) / ROWS_LIFT;
+    }
+
+    private int currentSection() {
+        int cw = cwRowActive() ? 1 : 0;
+        return zone == Z_GENRE ? genreSection + cw : zone == Z_WATCH && cw == 1 ? 0 : -1;
+    }
+
+    private void enterSection(int s) {
+        if (cwRowActive() && s == 0) {
+            zone = Z_WATCH;
+        } else {
+            zone = Z_GENRE;
+            genreSection = s - (cwRowActive() ? 1 : 0);
+        }
+        rows.target = liftFor(s);
+    }
+
+    /** ↓ from the shelf raises the first row; ↑/↓ go from row to row; ↑ on the first lowers them, ↓ on the last opens the drawer. */
+    private boolean moveRows(int dy) {
+        int s = currentSection(), n = sections();
+        if (zone == Z_SHELF) {
+            enterSection(0);
+            if (zone == Z_WATCH && !shelf.isEmpty() && shelfIndex < tileRects.length) {
+                float x = tileRects[shelfIndex].centerX();
+                int best = 0;
+                for (int i = 0; i < watching.size(); i++) {
+                    watchRect(i, tmp);
+                    if (Math.abs(tmp.centerX() - x) < Math.abs(tmpCenter(best) - x)) best = i;
+                }
+                watchIndex = best;
+            }
+        } else if (dy < 0) {
+            if (s <= 0) {
+                zone = Z_SHELF;
+                rows.target = 0;
+            } else {
+                enterSection(s - 1);
+            }
+        } else if (s >= n - 1) {
+            if (drawerItems.isEmpty()) return true;
+            openDrawer();
+        } else {
+            enterSection(s + 1);
+        }
+        retarget(false);
+        retargetGenres(false);
+        rowsLayer.invalidate();
+        wake();
+        click.move();
+        return true;
+    }
+
+    private void moveGenre(int dx) {
+        int s = genreSection;
+        if (s >= genreItems.size()) return;
+        int next = Math.max(0, Math.min(genreItems.get(s).size() - 1, genreItem[s] + dx));
+        if (next == genreItem[s]) return;
+        genreItem[s] = next;
+        retargetGenres(false);
+        rowsLayer.invalidate();
+        wake();
+        click.move();
+    }
+
+    private void retargetGenres(boolean snap) {
+        for (int r = 0; r < genreShown.size(); r++) {
+            for (int i = 0; i < GenreRows.PER_ROW; i++) {
+                float t = zone == Z_GENRE && !sheetOpen && r == genreSection && i == genreItem[r] ? 1 : 0;
+                genreFocus[r][i].target = t;
+                if (snap) genreFocus[r][i].snap(t);
+            }
+            float to = Math.max(0, genreItem[r] - 4);   // five across, then it scrolls
+            genreScroll[r].target = to;
+            if (snap) genreScroll[r].snap(to);
+        }
+    }
+
+    /** The genre rows that have titles for this tab, in the chosen order. */
+    private void updateGenreRows() {
+        genreShown.clear();
+        genreItems.clear();
+        if (picksMode()) {
+            java.util.Set<String> shown = new java.util.HashSet<>();   // what the picks already show stays out of the rows
+            for (Recs.Pick p : cards) shown.add(Recs.key(p));
+            for (String g : GenreRows.chosen()) {
+                List<Recs.Pick> items = new ArrayList<>();
+                for (Recs.Pick p : genreRows.row(g, TAB_KIND[tab])) {
+                    if (items.size() < GenreRows.PER_ROW && shown.add(Recs.key(p))) items.add(p);   // nor twice across rows
+                }
+                if (items.isEmpty()) continue;
+                genreShown.add(g);
+                genreItems.add(items);
+            }
+        }
+        for (int r = 0; r < genreShown.size(); r++) genreItem[r] = Math.min(genreItem[r], genreItems.get(r).size() - 1);
+        fixRows();
+        retargetGenres(true);
+    }
+
+    /** Sections came or went: a focus on one that's gone goes to the shelf, and the rows come down with it. */
+    private void fixRows() {
+        if (zone == Z_GENRE && genreSection >= genreShown.size() || zone == Z_WATCH && !continueMode() && !cwRowActive()) {
+            zone = Z_SHELF;
+            rows.target = 0;
+            retarget(false);
+        } else if (!rowsActive() && rows.target > 0) {
+            rows.target = 0;
+        } else if (rows.target > 0 && currentSection() >= 0 && !drawerOpen) {
+            rows.target = liftFor(currentSection());
+        }
+    }
+
+    private float tmpCenter(int i) {
+        watchRect(i, hitBox);
+        return hitBox.centerX();
+    }
+
+    private void drawRows(Canvas c) {
+        applyTone();
+        lTabOn.setColor(tone(L_INK, WHITE));
+        if (cwRowActive()) {
+            c.drawText(Ui.tr("Continue Watching"), MARGIN * k, (cwTop() + 34) * k, lTabOn);
+            drawWatchRow(c);
+        }
+        for (int r = 0; r < genreShown.size(); r++) drawGenreRow(c, r);
+    }
+
+    /** A genre row: its name, then 16:9 cards (the focused one ringed, as the picks) with the title under each. */
+    private void drawGenreRow(Canvas c, int r) {
+        float top = genreTop(r);
+        c.drawText(Ui.tr(genreShown.get(r)), MARGIN * k, (top + 34) * k, lTabOn);
+        List<Recs.Pick> items = genreItems.get(r);
+        float step = (G_CARD_W + G_GAP) * k, y = (top + 70) * k, radius = 16 * k;   // the cards as far under the label as Continue Watching's
+        c.save();
+        c.clipRect(watchLeftEdge(), 0, w, (top + GENRE_H) * k);   // cards scrolled past the margin slide out under it
+        for (int i = 0; i < items.size(); i++) {
+            float x = MARGIN * k + (i - genreScroll[r].value) * step;
+            if (x > w || x + G_CARD_W * k < 0) continue;
+            cell.set(x, y, x + G_CARD_W * k, y + G_CARD_H * k);
+            Recs.Pick p = items.get(i);
+            Bitmap img = genreRows.image(p);
+            if (img != null) {
+                roundImage(c, img, genreRows.shader(img), cell, radius);
+            } else {
+                fill.setShader(null);
+                fill.setColor(tone(0xFFDADADF, 0xFF2C2C2E));
+                c.drawRoundRect(cell, radius, radius, fill);
+            }
+            float f = Ui.clamp(genreFocus[r][i].value);
+            if (f > 0.01f) drawCardRing(c, cell, radius, f);
+            drawBadges(c, cell, p);
+            fitPaint.set(lCardMeta);
+            int a = lCardMeta.getAlpha();
+            lCardMeta.setColor(blend(tone(L_DIM, 0xFF98989D), tone(L_INK, WHITE), f));
+            c.drawText(TextUtils.ellipsize(p.title, fitPaint, G_CARD_W * k, TextUtils.TruncateAt.END).toString(), x, cell.bottom + 36 * k, lCardMeta);
+            if (p.meta != null && !p.meta.isEmpty()) {   // Movie · 2023 · ★7.6, quieter
+                lCardMeta.setColor(tone(L_FAINT, 0xFF8E8E93));
+                c.drawText(TextUtils.ellipsize(p.meta, fitPaint, G_CARD_W * k, TextUtils.TruncateAt.END).toString(), x, cell.bottom + 66 * k, lCardMeta);
+            }
+            lCardMeta.setAlpha(a);
+        }
+        c.restore();
+    }
+
+    /** OK on a genre card: through Open picks with (the chooser with two apps or more), as a pick going to Nuvio. */
+    private void openGenreItem() {
+        if (genreSection >= genreItems.size()) return;
+        List<Recs.Pick> items = genreItems.get(genreSection);
+        if (genreItem[genreSection] >= items.size()) return;
+        Recs.Pick p = items.get(genreItem[genreSection]);
+        if (showOpenWith(p)) return;
+        if (p.pkg == null) {
+            showToast(Ui.tr("Choose an app in Home Settings › Picks › Open picks with."));
+            return;
+        }
+        click.open();
+        float x = MARGIN * k + (genreItem[genreSection] - genreScroll[genreSection].value) * (G_CARD_W + G_GAP) * k;
+        HomeApps.Item it = HomeApps.app(p.pkg, p.title, p.link);
+        if (!HomeApps.open(activity, it, this, Math.round(x), Math.round(h / 2f), Math.round(G_CARD_W * k), Math.round(G_CARD_H * k))) {
+            showToast(Ui.trf("Couldn't open {app}.", "app", p.title));
+        }
+    }
+
+    /**
+     * The same title (and episode) from two apps comes once, from the first of the Open picks with apps that has it
+     * (Nuvio Arc before Nuvio One), else the first listed. Both forks publish what you watch in either.
+     */
+    private static List<WatchNext.Item> mergeWatching(List<WatchNext.Item> list) {
+        List<String> order = Prefs.openWith();
+        Map<String, Integer> at = new HashMap<>();
+        List<WatchNext.Item> out = new ArrayList<>();
+        for (WatchNext.Item it : list) {
+            String key = it.title.trim().toLowerCase(java.util.Locale.ROOT) + "|" + (it.episode == null ? "" : it.episode);
+            Integer i = at.get(key);
+            if (i == null) {
+                at.put(key, out.size());
+                out.add(it);
+            } else if (rank(order, it.pkg) < rank(order, out.get(i).pkg)) {
+                out.set(i, it);
+            }
+        }
+        return out;
+    }
+
+    private static int rank(List<String> order, String pkg) {
+        int i = order.indexOf(pkg);
+        return i < 0 ? Integer.MAX_VALUE : i;
+    }
+
+    // MARK: - [custom] Open with: the apps a pick can open in (OpenWith, ENHANCED.md)
+
+    /** A pick going to Nuvio, with two or more apps chosen: the chooser opens, and true. Else false (it just opens). */
+    private boolean showOpenWith(Recs.Pick p) {
+        if (menuOpen || menuTitlePaint == null || !"nuvio".equals(p.app) || p.link == null) return false;
+        List<String[]> apps = OpenWith.chosen(activity);
+        if (apps.size() < 2) return false;
+        float width = (MENU_W - 2 * MENU_PAD) * k;
+        menuItem = null;
+        menuOpenPick = p;
+        menuApps.clear();
+        menuApps.addAll(apps);
+        menuTitle = TextUtils.ellipsize(p.title, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
+        menuSub = Ui.tr("Open with");
+        for (int i = 0; i < apps.size(); i++) {
+            menuOptions[i] = TextUtils.ellipsize(apps.get(i)[1], new TextPaint(menuOptionPaint), width, TextUtils.TruncateAt.END).toString();
+        }
+        menuOptions[apps.size()] = Ui.tr("Cancel");
+        menuCount = apps.size() + 1;
+        layoutMenu();
+        menuOpen = true;
+        menuIndex = 0;
+        menuPick.snap(0);
+        menu.target = 1;
+        menuLayer.setVisibility(VISIBLE);
+        menuLayer.invalidate();
+        wake();
+        click.open();
+        spoken.focusMoved();
+        return true;
+    }
+
+    /** The chooser's option: the pick's page in that app (the same link; only the app changes), or Cancel. */
+    private void openPickWith(Recs.Pick p, int choice) {
+        if (choice >= menuApps.size()) {
+            click.move();
+            return;
+        }
+        String[] app = menuApps.get(choice);
+        click.open();
+        HomeApps.Item it = HomeApps.app(app[0], app[1], p.link);
+        RectF r = cardRects[Math.min(cardIndex, cardRects.length - 1)];
+        boolean opened = HomeApps.open(activity, it, this, Math.round(r.left), Math.round(r.top),
+                Math.round(r.width()), Math.round(r.height()));
+        if (!opened) showToast(Ui.trf("Couldn't open {app}.", "app", app[1]));
+    }
+
     // MARK: - Continue Watching: the menu of a held card
 
     private boolean canHold() {
-        return zone == Z_WATCH && !sheetOpen && !drawerOpen && continueMode() && watchIndex < watching.size();
+        return zone == Z_WATCH && !sheetOpen && !drawerOpen && (continueMode() || cwRowActive()) && watchIndex < watching.size();   // [custom] cwRowActive
     }
 
     /** The focused card's menu (held OK, or TalkBack's long click). */
@@ -4390,6 +5479,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         menuOptions[0] = Ui.tr("Hide from Continue Watching");
         menuOptions[1] = Ui.tr("Open the app");
         menuOptions[2] = Ui.tr("Cancel");
+        menuCount = 3;          // [custom]
+        menuOpenPick = null;    // [custom]
+        menuAppItem = null;     // [custom]
         layoutMenu();
         menuOpen = true;
         menuIndex = 0;
@@ -4404,7 +5496,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The panel, centered on the screen: title, the app's name (if known) and the three options. */
     private void layoutMenu() {
-        float rows = (MENU_PAD + 34 + (menuSub.isEmpty() ? 0 : 38) + 32 + 2 * MENU_STEP + MENU_ROW + MENU_INSET) * k;
+        float rows = (MENU_PAD + 34 + (menuSub.isEmpty() ? 0 : 38) + 32 + (menuCount - 1) * MENU_STEP + MENU_ROW + MENU_INSET) * k;
         float left = (w - MENU_W * k) / 2, top = (h - rows) / 2;
         menuPanel.set(left, top, left + MENU_W * k, top + rows);
         menuOptionsTop = top + (MENU_PAD + 34 + (menuSub.isEmpty() ? 0 : 38) + 32) * k;
@@ -4419,6 +5511,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!menuOpen && !snap) return;
         boolean was = menuOpen;
         menuOpen = false;
+        menuOpenPick = null;   // [custom]
+        menuAppItem = null;    // [custom]
+        menuRatePick = null;   // [custom]
+        menuMode = M_APP;
         menu.target = 0;
         if (snap) {
             menu.snap(0);
@@ -4468,7 +5564,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void moveMenu(int d) {
-        int next = Math.max(0, Math.min(menuOptions.length - 1, menuIndex + d));
+        int next = Math.max(0, Math.min(menuCount - 1, menuIndex + d));
         if (next == menuIndex) return;
         menuIndex = next;
         menuPick.target = next;
@@ -4481,7 +5577,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void pickMenu() {
         WatchNext.Item it = menuItem;
         int choice = menuIndex;
+        Recs.Pick openPick = menuOpenPick;   // [custom] the Open with chooser
+        HomeApps.Item appItem = menuAppItem;   // [custom] the All Apps menu
+        int mode = menuMode;
+        Recs.Pick ratePick = menuRatePick;      // [custom] Love it / Not for me
         closeMenu(false);
+        if (ratePick != null) {
+            ratePick(ratePick, choice);
+            return;
+        }
+        if (openPick != null) {
+            openPickWith(openPick, choice);
+            return;
+        }
+        if (appItem != null) {
+            menuMode = mode;   // closeMenu reset it (a menu this choice opens sets its own)
+            pickAppMenu(appItem, choice);
+            return;
+        }
         if (it == null) return;
         if (choice == 0) {
             click.open();
@@ -4545,10 +5658,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         fill.setColor(Ui.alpha(tone(L_INK, WHITE), a));
         c.drawRoundRect(tmp, rowR, rowR, fill);
         int ink = tone(L_INK, WHITE), onPill = tone(WHITE, L_INK);
-        for (int i = 0; i < menuOptions.length; i++) {
+        for (int i = 0; i < menuCount; i++) {
             menuRow(i, tmp);
             float f = Ui.clamp(1 - Math.abs(pick - i));
-            int base = i == 0 ? tone(0xFFD70015, 0xFFFF6961) : ink;   // hiding is the destructive one: red
+            int base = i == 0 && menuOpenPick == null && menuAppItem == null && menuRatePick == null ? tone(0xFFD70015, 0xFFFF6961) : ink;   // hiding is the destructive one: red
             menuOptionPaint.setColor(Ui.alpha(blend(base, onPill, f), a));
             c.drawText(menuOptions[i], tmp.left + 28 * k, tmp.centerY() + Ui.halfCap(menuOptionPaint), menuOptionPaint);
         }
@@ -4561,9 +5674,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // A tab opens at its first pick, its row at the start: at once, as sliding back would first show the new
         // tab's cards scrolled to where the last tab was.
         cardIndex = 0;
-        aim(cardOpen, 0, true);
+        aim(cardOpen, cardHighlight ? -1 : 0, true);   // [custom]
         cardScroll.snap(0);
         updateCards();
+        updateGenreRows();   // [custom] the rows follow the tab
         heroDirty = true;
     }
 
@@ -4674,7 +5788,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (HomeData.coinCount() > 0 || playingTab != null) drawQuotes(c);
             return;
         }
-        String hello = picksMode() ? Ui.tr("For You") : Ui.tr("Continue Watching");
+        String hello = topTitle();   // [custom] the time, with Time and weather on (else "For You" / "Continue Watching")
         c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
         titleRight = MARGIN * k + lTitle.measureText(hello);
         if (!picksMode()) {
@@ -4719,6 +5833,92 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return Recs.hasKey(getContext());
     }
 
+    /** [custom] The top title: the time with Time and weather on, else upstream's "For You" / "Continue Watching". */
+    private String topTitle() {
+        if (titleClock) return clockText;
+        return picksMode() ? Ui.tr("For You") : Ui.tr("Continue Watching");
+    }
+
+    /**
+     * [custom] The weather now (icon, degrees, condition) on the title's line, after the time and the status icons, in
+     * the status icons' layer: redrawn with them once a minute, never while the focus moves on the cards or shelf.
+     */
+    private void drawTitleWeather(Canvas c, float x) {
+        HomeData.Weather wx = data.weather;
+        if (!Prefs.weather() || Double.isNaN(wx.temp)) return;
+        if (data.weatherAt != titleWeatherAt || Prefs.version != titleWeatherPrefs) {
+            titleWeatherAt = data.weatherAt;
+            titleWeatherPrefs = Prefs.version;
+            titleWeather = HomeData.degrees(wx.temp) + "  " + HomeData.condition(wx.code, wx.isDay);
+        }
+        float size = 34 * k, cy = L_BUTTON_CY * k;
+        String symbol = Symbols.weather(wx.code, wx.isDay);
+        float sw = Symbols.width(getContext(), symbol, size);
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, cy, size, lWeather.getColor());
+        c.drawText(titleWeather, x + sw + 12 * k, cy + Ui.halfCap(lWeather), lWeather);
+    }
+
+    /**
+     * [custom] Under a highlighted card's title: its meta line (Trakt's reason first, then genre, length, year, service),
+     * fading in with the focus. Wider than the card (the cards beside it only show a title above this line); near the
+     * right edge it ends at the card's right instead, so it's never cut.
+     */
+    private void drawHighlightMeta(Canvas c, Recs.Pick p, RectF base, float f) {
+        if (f < 0.02f || p.meta == null || p.meta.isEmpty()) return;
+        fitPaint.set(lCardMeta);
+        float room = Math.min(CONTENT_R * k - MARGIN * k, Math.max(base.width(), CONTENT_R * k - base.left));
+        String text = TextUtils.ellipsize(p.meta, fitPaint, room, TextUtils.TruncateAt.END).toString();
+        float tw = lCardMeta.measureText(text);
+        float x = base.left + tw <= CONTENT_R * k ? base.left : Math.max(MARGIN * k, base.right - tw);
+        int a = lCardMeta.getAlpha();
+        lCardMeta.setAlpha(Math.round(a * f));
+        c.drawText(text, x, base.bottom + 80 * k, lCardMeta);
+        lCardMeta.setAlpha(a);
+    }
+
+    /**
+     * [custom] The card's badges, small dark glass pills: its length at the top left ("1h 46m", "3 seasons", "Series"),
+     * TMDB's rating at the top right ("★ 7.6"), the year at the bottom left. On the picks and the genre rows. A rounded
+     * rectangle and a line of text each: no layer, no blur.
+     */
+    private void drawBadges(Canvas c, RectF card, Recs.Pick p) {
+        drawBadge(c, card, p.length, false, false);
+        drawBadge(c, card, p.rating, true, false);
+        drawBadge(c, card, p.year, false, true);
+    }
+
+    /** One pill in a corner of the card: top or bottom, left or right. */
+    private void drawBadge(Canvas c, RectF card, String text, boolean right, boolean bottom) {
+        if (text == null || lBadge == null) return;
+        float pad = 11 * k, bh = 34 * k, inset = 12 * k, tw = lBadge.measureText(text);
+        float left = right ? card.right - inset - tw - 2 * pad : card.left + inset;
+        float top = bottom ? card.bottom - inset - bh : card.top + inset;
+        badge.set(left, top, left + tw + 2 * pad, top + bh);
+        fill.setShader(null);
+        fill.setColor(0x99101012);
+        c.drawRoundRect(badge, bh / 2, bh / 2, fill);
+        int was = border.getColor();
+        border.setColor(0x33FFFFFF);
+        c.drawRoundRect(badge, bh / 2, bh / 2, border);
+        border.setColor(was);
+        c.drawText(text, badge.left + pad, badge.centerY() + Ui.halfCap(lBadge), lBadge);
+    }
+
+    private final RectF badge = new RectF();
+
+    private void drawCardRing(Canvas c, RectF card, float radius, float f) {
+        float gap = 7 * k, width = 5 * k;
+        tmp.set(card);
+        tmp.inset(-gap - width / 2, -gap - width / 2);
+        int was = border.getColor();
+        float stroke = border.getStrokeWidth();
+        border.setStrokeWidth(width);
+        border.setColor(Ui.alpha(tone(L_INK, WHITE), f));   // dark on the light day look, white at night
+        c.drawRoundRect(tmp, radius + gap, radius + gap, border);
+        border.setStrokeWidth(stroke);
+        border.setColor(was);
+    }
+
     private void drawClock(Canvas c) {
         float x = MARGIN * k;
         c.drawText(dateText, x - Ui.leftBearing(lDate, dateText), L_DATE_BASE * k, lDate);
@@ -4748,9 +5948,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         RectF base = cardRects[i];
         if (base.right < 0 || base.left > getWidth()) return;   // slid off screen
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
-        float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + 0.05f * v;
+        float v = cardFocus[i].value, f = Ui.clamp(v), s = cardHighlight ? 1 : 1 + 0.05f * v;   // [custom] no growth
         float bw = base.width(), bh = base.height(), r0 = 18 * k;
-        float cx = base.centerX(), cy = base.centerY() - 6 * k * v;
+        float cx = base.centerX(), cy = base.centerY() - (cardHighlight ? 0 : 6 * k * v);
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
         c.save();
@@ -4804,11 +6004,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setStrokeWidth(2.5f * k);
             rim.setAlpha(255);
             c.restore();
+            if (cardHighlight) drawCardRing(c, cell, r, f);   // [custom]
         }
+        if (p != null) drawBadges(c, cell, p);   // [custom]
         // The cards peeking in at the sides show only their image: their text would start off screen.
         if (p == null || base.left < 0 || base.left > (CONTENT_R - 100) * k) return;
         fitPaint.set(lCardTitle);
         c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 46 * k, lCardTitle);
+        if (cardHighlight) {   // [custom] the focused card's whole meta line (service, genre, length, year)
+            drawHighlightMeta(c, p, base, f);
+            return;
+        }
         if (open > 0.02f && p.meta != null && !p.meta.isEmpty()) {
             fitPaint.set(lCardMeta);
             int a = lCardMeta.getAlpha();
@@ -4884,15 +6090,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Wi-Fi/Ethernet, Bluetooth (when something is connected) and a USB drive, at the top left. */
     private void drawStatusIcons(Canvas c) {
-        if (!Prefs.statusIcons()) return;
+        if (!Prefs.statusIcons() && !(titleClock && !clockMode())) return;   // [custom] or the weather after the time
         float height = L_STATUS * k, gap = L_STATUS_GAP * k;
         int color = Ui.alpha(tone(L_INK, 0xEBFFFFFF), 0.85f);
         float x = MARGIN * k;
         // The top title ("For You", or "Continue Watching") is on this line too: the icons start after it, not on it.
-        if (!clockMode()) x += lTitle.measureText(picksMode() ? Ui.tr("For You") : Ui.tr("Continue Watching")) + gap;
-        if (network != 0) x = drawStatusIcon(c, network == 2 ? "ethernet" : "wifi", x, height, gap, color);
-        if (bluetoothConnected) x = drawStatusIcon(c, "bluetooth", x, height, gap, color);
-        if (usbConnected) drawStatusIcon(c, "usb", x, height, gap, color);
+        if (!clockMode()) x += lTitle.measureText(topTitle()) + gap;   // [custom] topTitle(): the time or the title
+        if (Prefs.statusIcons()) {   // [custom] the weather below may follow without the icons
+            if (network != 0) x = drawStatusIcon(c, network == 2 ? "ethernet" : "wifi", x, height, gap, color);
+            if (bluetoothConnected) x = drawStatusIcon(c, "bluetooth", x, height, gap, color);
+            if (usbConnected) x = drawStatusIcon(c, "usb", x, height, gap, color);
+        }
+        if (titleClock && !clockMode()) drawTitleWeather(c, x + 6 * k);   // [custom]
     }
 
     /** Narrow symbols need a little more height to look as big as wide ones. */

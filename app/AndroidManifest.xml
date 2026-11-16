@@ -96,6 +96,11 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="content" android:host="android.media.tv" />
         </intent>
+        <!-- [custom] Apps that open Nuvio's title links (OpenWith). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="nuvio" />
+        </intent>
     </queries>
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -103,7 +108,7 @@
 
     <application
         android:name=".App"
-        android:label="Free My TV"
+        android:label="Free My TV Enhanced"
         android:icon="@drawable/icon"
         android:banner="@drawable/banner"
         android:allowBackup="false"
@@ -114,7 +119,7 @@
             android:name=".SettingsActivity"
             android:process=":home"
             android:exported="true"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:launchMode="singleTask"
             android:taskAffinity="io.freemytv.settings"
             android:excludeFromRecents="true"
@@ -145,7 +150,7 @@
             android:name=".HomeActivity"
             android:process=":home"
             android:exported="true"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:launchMode="singleTask"
             android:taskAffinity=""
             android:stateNotNeeded="true"
@@ -173,7 +178,7 @@
             android:name=".FireHomeActivity"
             android:process=":home"
             android:exported="false"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:launchMode="singleTask"
             android:taskAffinity="io.freemytv.settings"
             android:excludeFromRecents="true"
@@ -183,6 +188,17 @@
 
         <!-- The quick settings panel the remote's Settings button opens in Free My TV mode (RemoteKeys), over what's
              playing: a window on the left of the screen, not the whole screen. -->
+        <!-- [custom] TV Status (ENHANCED.md): a panel over the home screen -->
+        <activity
+            android:name=".TvStatusActivity"
+            android:process=":home"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="io.freemytv.status"
+            android:excludeFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/FreeMyTV.Panel" />
+
         <activity
             android:name=".QuickPanelActivity"
             android:process=":home"
@@ -198,7 +214,7 @@
             android:process=":home"
             android:enabled="@bool/dream_in_home"
             android:exported="true"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:permission="android.permission.BIND_DREAM_SERVICE">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
@@ -211,7 +227,7 @@
             android:name=".ScreensaverAlone"
             android:enabled="@bool/dream_alone"
             android:exported="true"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:permission="android.permission.BIND_DREAM_SERVICE">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
@@ -231,7 +247,7 @@
             android:name=".RemoteKeyService"
             android:process=":keys"
             android:exported="true"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -255,6 +271,14 @@
             android:authorities="io.freemytv.secrets"
             android:exported="true" />
 
+        <!-- [custom] The on-screen settings out and in over adb, to copy one TV's setup to another; only adb's shell
+             may (Backup checks). In :home, the process that holds them. -->
+        <provider
+            android:name=".Backup"
+            android:authorities="io.freemytv.backup"
+            android:process=":home"
+            android:exported="true" />
+
         <!-- The sleep timer's minutes left over any app, while the timer runs. A process of its own: a foreground
              service in :home would keep the whole home screen in memory under the app in front. -->
         <service
@@ -267,7 +291,7 @@
         <service
             android:name=".NowPlaying"
             android:exported="true"
-            android:label="Free My TV"
+            android:label="Free My TV Enhanced"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

@@ -179,7 +179,7 @@ final class Updates {
             out.write(v.getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) {
         }
-        Toast.makeText(a, Ui.trf("Free My TV {version} is ready: Home Settings > Updates.", "version", v), Toast.LENGTH_LONG).show();
+        Toast.makeText(a, Ui.trf("Free My TV Enhanced {version} is ready: Home Settings > Updates.", "version", v), Toast.LENGTH_LONG).show();
     }
 
     // MARK: - Check and download

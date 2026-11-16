@@ -86,7 +86,7 @@ final class HomeMode {
 
     /** What the settings and the refused switch say on a phone. */
     static String phoneText() {
-        return Ui.tr("Free My TV is a TV app: install this APK on your Android TV or Google TV (freemytv.io), not on a phone.");
+        return Ui.tr("Free My TV Enhanced is a TV app: install this APK on your Android TV or Google TV (freemytv.io), not on a phone.");
     }
 
     /** Classic Android TV's home screen; its recommendations service crashes on the screensaver while it's off (#11). */
@@ -540,7 +540,7 @@ final class HomeMode {
     private static void applyFree(Context c) {
         JSONObject s = state(c);
         if (AMAZON) {
-            done(c, Ui.tr("On Fire TV the Home button belongs to Amazon's home screen. Free My TV stays an app here: open it from your apps."));
+            done(c, Ui.tr("On Fire TV the Home button belongs to Amazon's home screen. Free My TV Enhanced stays an app here: open it from your apps."));
             return;
         }
         if (BRICKS) {
@@ -680,20 +680,20 @@ final class HomeMode {
             }
             wakeWatch(adb, true);
             notice(c, Capabilities.screensaver(c)
-                    ? Ui.trf("Free My TV is on: new home screen and screensaver, {n} apps turned off.", "n", disabled.size())
-                    : Ui.trf("Free My TV is on: new home screen, {n} apps turned off.", "n", disabled.size()));
-            busy(c, Ui.tr("Measuring Free My TV…"));
+                    ? Ui.trf("Free My TV Enhanced is on: new home screen and screensaver, {n} apps turned off.", "n", disabled.size())
+                    : Ui.trf("Free My TV Enhanced is on: new home screen, {n} apps turned off.", "n", disabled.size()));
+            busy(c, Ui.tr("Measuring Free My TV Enhanced…"));
             measure(c, adb, FREE, false);
             done(c, null);
             homeAfter(adb);
             ModeJob.schedule(c, ModeJob.MEMORY, FREE, 120_000);
         } catch (Exception e) {
-            done(c, Ui.trf("Couldn't turn on Free My TV: {error}", "error", e.getMessage()));
+            done(c, Ui.trf("Couldn't turn on Free My TV Enhanced: {error}", "error", e.getMessage()));
         }
     }
 
     static String bricksText() {
-        return Ui.tr("On this TV model, switching the home screen kept a TV from starting. Free My TV stays an app here: open it from your apps.");
+        return Ui.tr("On this TV model, switching the home screen kept a TV from starting. Free My TV Enhanced stays an app here: open it from your apps.");
     }
 
     private static void applyOriginal(Context c) {
@@ -891,7 +891,7 @@ final class HomeMode {
                 }
                 s.put("homeReverted", true).put("disabled", kept);
                 save(app, s);
-                notice(app, Ui.tr("Free My TV's home screen crashed 3 times in a row; I switched back to the original one."));
+                notice(app, Ui.tr("Free My TV Enhanced's home screen crashed 3 times in a row; I switched back to the original one."));
                 adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME");
             } catch (Exception e) {
                 AppLog.w("could not give the home screen back: " + e.getMessage());
@@ -917,7 +917,7 @@ final class HomeMode {
             if (!FREE.equals(s.optString("mode")) || AMAZON) return;
             if (BRICKS) {
                 // Switched by a version that still allowed it here: the TV's own home screen back before the next restart.
-                AppLog.w("Free My TV mode where the switch kept a TV from starting: back to Original");
+                AppLog.w("Free My TV Enhanced mode where the switch kept a TV from starting: back to Original");
                 applyOriginal(app);
                 notice(app, bricksText());
                 return;
@@ -1058,14 +1058,14 @@ final class HomeMode {
                 if (theirs) latest.put("keptOff", new JSONArray(keptOff));
                 save(app, latest);
             } catch (Exception e) {
-                notice(app, Ui.trf("Couldn't check Free My TV: {error}", "error", e.getMessage()));
+                notice(app, Ui.trf("Couldn't check Free My TV Enhanced: {error}", "error", e.getMessage()));
                 return;
             }
             if (!fixed.isEmpty()) {
                 notice(app, updated ? Ui.trf("The TV update turned back on {list}.", "list", String.join(", ", fixed))
                         : Ui.trf("Turned off what was missing: {list}.", "list", String.join(", ", fixed)));
             } else if (updated) {
-                notice(app, Ui.tr("The TV was updated; Free My TV is still on."));
+                notice(app, Ui.tr("The TV was updated; Free My TV Enhanced is still on."));
             }
         }
     }

@@ -1,3 +1,8 @@
+> **Free My TV Enhanced** — this is a fork of [Free My TV](https://github.com/simbasjungles/free-my-tv) by
+> simbasjungles, with extra Google TV / Android TV home screen features by iZsk: rating, runtime and year badges on the
+> picks, "Your taste" suggestions, Continue Watching and genre rows, folders and multi-select in All Apps, a TV Status
+> panel and a performance mode. See [ENHANCED.md](ENHANCED.md). Everything below is upstream's README.
+
 <div align="center">
 
 <img src="docs/assets/icon-512.png" width="96" alt="">

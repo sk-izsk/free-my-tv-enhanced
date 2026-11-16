@@ -174,6 +174,10 @@ public class SettingsActivity extends Activity {
         private final List<String> shelfOrder = new ArrayList<>();
         private boolean editingTop;
         private boolean editingInputs;   // the editor edits the drawer's inputs instead of the shelf or top buttons
+        private boolean editingOpenWith;   // [custom] the editor edits the apps picks open in (OpenWith)
+        private boolean editingGenres;     // [custom] the editor edits Your taste's genres (Taste)
+        private boolean genreRowsMode;     // [custom] … or, with it, the genre rows under the shelf (GenreRows, at most 3)
+        private static final String FORGET_ROW = "#forget";   // [custom] Your taste: forget the loved and Not for me titles
         /** The shelf editor's first row: the order set here or the last one opened first (Prefs.shelfRecent). */
         private static final String ORDER_ROW = "#order";
         private int pickFor, pickCurrent, pickScroll;   // pickFor: the remote button (index + 1)
@@ -291,7 +295,7 @@ public class SettingsActivity extends Activity {
             phone = HomeMode.phone(a);
             scene.applyPalette();
             setFocusable(true);
-            setContentDescription("Free My TV");
+            setContentDescription("Free My TV Enhanced");
             installed = Updates.installedVersion(a);
             // TalkBack: one item per row, id = row + 1.
             spoken = new Spoken(this, new Spoken.Source() {
@@ -328,7 +332,7 @@ public class SettingsActivity extends Activity {
                     if (row == 0) {
                         String busyText = busyText();
                         String value = busy() ? (busyText.isEmpty() ? Ui.tr("Starting…") : busyText)
-                                : freeActive() ? "Free My TV" : Ui.tr("Original");
+                                : freeActive() ? "Free My TV Enhanced" : Ui.tr("Original");
                         return Ui.trf("Home Screen, {mode}", "mode", value);
                     }
                     String[] names = {Ui.tr("Screensaver, preview"), Ui.tr("Home Settings"),
@@ -337,7 +341,7 @@ public class SettingsActivity extends Activity {
                     return row - 1 < names.length ? names[row - 1] : "";
                 }
                 case HOME_CHOICE: {
-                    String name = row == 0 ? "Free My TV, " + (Capabilities.screensaver(getContext())
+                    String name = row == 0 ? "Free My TV Enhanced, " + (Capabilities.screensaver(getContext())
                             ? Ui.tr("no ads, with the new screensaver") : Ui.tr("no ads"))
                             : "Original, " + Ui.tr("the TV's factory home screen");
                     boolean inUse = (row == 0) == freeActive();
@@ -385,6 +389,9 @@ public class SettingsActivity extends Activity {
                     if (editingInputs) {
                         return app[1] + ", " + (place >= 0 ? Ui.trf("in the inputs, place {n}", "n", place + 1)
                                 : Ui.tr("not in the inputs"));
+                    }
+                    if (editingOpenWith) {   // [custom]
+                        return app[1] + ", " + (place >= 0 ? Ui.trf("offered, place {n}", "n", place + 1) : Ui.tr("not offered"));
                     }
                     return app[1] + ", " + (place >= 0 ? Ui.trf("on the shelf, place {n}", "n", place + 1)
                             : Ui.tr("not on the shelf"));
@@ -533,10 +540,10 @@ public class SettingsActivity extends Activity {
          */
         private static String stalledText() {
             return RemoteKeys.TCL
-                    ? Ui.trf("TCL blocks Free My TV from running in the background, so nothing changed. From a computer, "
+                    ? Ui.trf("TCL blocks Free My TV Enhanced from running in the background, so nothing changed. From a computer, "
                             + "run this, then try again: {command}", "command",
                             "adb shell \"appops set io.freemytv AUTO_START allow || appops set io.freemytv APP_AUTO_START allow\"")
-                    : Ui.tr("The TV didn't let Free My TV run in the background, so nothing changed. Try again in a minute.");
+                    : Ui.tr("The TV didn't let Free My TV Enhanced run in the background, so nothing changed. Try again in a minute.");
         }
 
         private int rowCount() {
@@ -582,9 +589,11 @@ public class SettingsActivity extends Activity {
             // On the left: big symbol, title, description.
             float cx = 500 * k;
             Symbols.draw(getContext(), c, "sparkles", cx, 400 * k, 150 * k, 0xEBFFFFFF);
-            c.drawText("Free My TV", cx, 612 * k, title);
-            c.drawText(Ui.tr("Your TV's home screen and screensaver"), cx, 660 * k, subtitle);
-            c.drawText(versionName(getContext()), cx, 704 * k, version);
+            // [custom] the owner's name for this copy, and its author, under it (ENHANCED.md)
+            c.drawText("Free My TV Enhanced", cx, 612 * k, title);
+            c.drawText("By iZsk", cx, 652 * k, subtitle);
+            c.drawText(Ui.tr("Your TV's home screen and screensaver"), cx, 696 * k, subtitle);
+            c.drawText(versionName(getContext()), cx, 740 * k, version);
 
             if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c);
             else if (screen == TMDB_KEY) drawKey(c);
@@ -596,7 +605,7 @@ public class SettingsActivity extends Activity {
         private void drawMain(Canvas c, float seconds) {
             boolean working = busy();
             String busyText = busyText();
-            String mode = freeActive() ? "Free My TV" : Ui.tr("Original");
+            String mode = freeActive() ? "Free My TV Enhanced" : Ui.tr("Original");
             String[] labels = {Ui.tr("Home Screen"), Ui.tr("Screensaver"),
                     Ui.tr("Home Settings"), Ui.tr("Shelf"), Ui.tr("Top Buttons"), Ui.tr("Inputs"),
                     Ui.tr("Remote Buttons"), Ui.tr("Sleep Timer"), Ui.tr("TV Settings")};
@@ -713,7 +722,7 @@ public class SettingsActivity extends Activity {
             }
             cellValue.setColor(0x73FFFFFF);
             c.drawText(Ui.tr("Original"), colA, y, cellValue);
-            c.drawText("Free My TV", colB, y, cellValue);
+            c.drawText("Free My TV Enhanced", colB, y, cellValue);
             cellValue.setColor(0xD9FFFFFF);
             // The mode just switched to: its memory comes two minutes later, so its cells wait with "…", not "—".
             boolean soon = !busy() && memorySoon();
@@ -750,7 +759,7 @@ public class SettingsActivity extends Activity {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Home Screen"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             String free = Capabilities.screensaver(getContext()) ? Ui.tr("No ads, with the new screensaver") : Ui.tr("No ads");
-            String[][] options = {{"Free My TV", free},
+            String[][] options = {{"Free My TV Enhanced", free},
                     {Ui.tr("Original"), Ui.tr("The TV's factory home screen")}};
             int current = freeActive() ? 0 : 1;
             for (int i = 0; i < 2; i++) {
@@ -796,9 +805,9 @@ public class SettingsActivity extends Activity {
 
         private static String versionName(Context c) {
             try {
-                return "Free My TV " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+                return "Free My TV Enhanced " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;   // [custom] the name
             } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-                return "Free My TV";
+                return "Free My TV Enhanced";
             }
         }
 
@@ -950,6 +959,11 @@ public class SettingsActivity extends Activity {
                                 screen = REMOTE_KEYS;
                             } else if (screen == TMDB_KEY) {
                                 closeKeyScreen();
+                            } else if (screen == SHELF_EDIT && (editingOpenWith || editingGenres)) {   // [custom] back to its row
+                                focus = cardFocusRow() + (editingGenres ? (genreRowsMode ? 6 : 5) : 2);
+                                editingOpenWith = editingGenres = false;
+                                pickScroll = 0;
+                                screen = PICKS;
                             } else if (screen == PICKS) {
                                 focus = PICKS_ROW;
                                 pickScroll = 0;
@@ -1054,15 +1068,89 @@ public class SettingsActivity extends Activity {
         }
 
         private String[] picksLabels() {
-            return Trakt.available() ? new String[] {Ui.tr("Picks per tab"), Ui.tr("Picks from"), Ui.tr("Cartoons and anime"), "Trakt"}
+            String[] base = Trakt.available() ? new String[] {Ui.tr("Picks per tab"), Ui.tr("Picks from"), Ui.tr("Cartoons and anime"), "Trakt"}
                     : new String[] {Ui.tr("Picks per tab"), Ui.tr("Picks from"), Ui.tr("Cartoons and anime")};
+            return withCustom(base, Ui.tr("Card focus"), Ui.tr("Time and weather"), Ui.tr("Open picks with"),   // [custom]
+                    Ui.tr("Continue Watching row"), Ui.tr("Suggestions"), Ui.tr("Your taste"), Ui.tr("Genre rows"), Ui.tr("Performance mode"));
         }
 
         private String[] picksValues() {
             String from = someServicesOff ? Ui.tr("services|Some") : Ui.tr("services|All");
             String animation = onOff(!Prefs.hideAnimation());
-            return Trakt.available() ? new String[] {String.valueOf(Prefs.cards()), from, animation, traktValue()}
+            String[] base = Trakt.available() ? new String[] {String.valueOf(Prefs.cards()), from, animation, traktValue()}
                     : new String[] {String.valueOf(Prefs.cards()), from, animation};
+            return withCustom(base, Prefs.cardHighlight() ? Ui.tr("Highlight") : Ui.tr("Grow"),   // [custom]
+                    onOff(Prefs.titleClock()), openWithValue(), onOff(Prefs.cwRow()),
+                    Taste.on() ? Ui.tr("Your taste") : Ui.tr("Trending"), tasteValue(), genreRowsValue(), onOff(Prefs.performance()));
+        }
+
+        // [custom] The owner's rows at the end of the Picks screen (ENHANCED.md): Card focus, Time and weather, Open
+        // picks with. Upstream's rows keep their places, so their indexes (traktRow) don't change.
+
+        private static String[] withCustom(String[] base, String... more) {
+            String[] out = new String[base.length + more.length];
+            System.arraycopy(base, 0, out, 0, base.length);
+            System.arraycopy(more, 0, out, base.length, more.length);
+            return out;
+        }
+
+        private static int cardFocusRow() {
+            return Trakt.available() ? 4 : 3;
+        }
+
+        private String tasteValue() {
+            int g = Prefs.tasteGenres().size(), l = Prefs.tasteLoved().size();
+            if (g == 0 && l == 0) return "›";
+            return Ui.plural("plural|one:{n} genre|other:{n} genres", g) + " · " + Ui.trf("{l} loved", "l", l);
+        }
+
+        private String genreRowsValue() {
+            List<String> g = GenreRows.chosen();
+            if (g.isEmpty()) return Ui.tr("Off");
+            List<String> names = new ArrayList<>();
+            for (String n : g) names.add(Ui.tr(n));
+            return String.join(", ", names);
+        }
+
+        /** Your taste's genres, or (forRows) the genre rows under the shelf: the same list of genres. */
+        private void openGenresEditor(boolean forRows) {
+            editingTop = false;
+            editingInputs = false;
+            editingOpenWith = false;
+            editingGenres = true;
+            genreRowsMode = forRows;
+            shelfOrder.clear();
+            shelfOrder.addAll(forRows ? GenreRows.chosen() : Prefs.tasteGenres());
+            List<String[]> rows = new ArrayList<>();
+            int rated = Prefs.tasteLoved().size() + Prefs.tasteNo().size();
+            if (rated > 0 && !forRows) rows.add(new String[] {FORGET_ROW, Ui.trf("Forget {n} rated titles", "n", rated)});
+            for (String[] g : Taste.GENRES) rows.add(new String[] {g[0], Ui.tr(g[0])});
+            rebuildShelfRows(rows);
+            pickScroll = 0;
+            focus = 0;
+            screen = SHELF_EDIT;
+        }
+
+        private String openWithValue() {
+            List<String[]> apps = OpenWith.chosen(getContext());
+            if (apps.isEmpty()) return Ui.tr("services|None");
+            return apps.size() == 1 ? apps.get(0)[1] : Ui.trf("{n} apps", "n", apps.size());
+        }
+
+        private void openOpenWithEditor() {
+            editingTop = false;
+            editingInputs = false;
+            editingGenres = false;
+            editingOpenWith = true;
+            List<String[]> candidates = OpenWith.candidates(getContext());
+            shelfOrder.clear();
+            for (String pkg : Prefs.openWith()) {
+                for (String[] app : candidates) if (app[0].equals(pkg) && !shelfOrder.contains(pkg)) shelfOrder.add(pkg);
+            }
+            rebuildShelfRows(candidates);
+            pickScroll = 0;
+            focus = 0;
+            screen = SHELF_EDIT;
         }
 
         /** The Trakt row on the Picks screen (the last one), only with a Trakt API app in config.properties; else -1. */
@@ -1412,7 +1500,7 @@ public class SettingsActivity extends Activity {
             // can onn's buttons.
             if (RemoteKeys.XIAOMI || RemoteKeys.XIAOMI_AFKR0 || RemoteKeys.ONN) {
                 appPkgs.add(HomeMode.PKG);
-                appLabels.add("Free My TV");
+                appLabels.add("Free My TV Enhanced");
             }
             if (RemoteKeys.HISENSE || RemoteKeys.GOOGLE_STREAMER || RemoteKeys.ONN || RemoteKeys.PHILIPS_GTV) {
                 appPkgs.add(Prefs.ALL_APPS);
@@ -1435,6 +1523,17 @@ public class SettingsActivity extends Activity {
                     Prefs.setCards(3 + (n + dir + span) % span);
                 } else if (focus == 2) {
                     Prefs.setHideAnimation(!Prefs.hideAnimation());
+                } else if (focus == cardFocusRow()) {            // [custom]
+                    Prefs.setCardHighlight(!Prefs.cardHighlight());
+                } else if (focus == cardFocusRow() + 1) {        // [custom]
+                    Prefs.setTitleClock(!Prefs.titleClock());
+                } else if (focus == cardFocusRow() + 7) {        // [custom] Performance mode
+                    Prefs.setPerformance(!Prefs.performance());
+                } else if (focus == cardFocusRow() + 4) {        // [custom] Suggestions
+                    Prefs.setPicksSource(Taste.on() ? "trending" : "taste");
+                } else if (focus == cardFocusRow() + 3) {        // [custom] the row needs the same permission as the top
+                    Prefs.setCwRow(!Prefs.cwRow());
+                    if (Prefs.cwRow() && !WatchNext.allowed(getContext())) HomeMode.requestWatchGrant(getContext());
                 }
                 return;
             }
@@ -2144,6 +2243,7 @@ public class SettingsActivity extends Activity {
         private void openShelfEditor(boolean top) {
             editingTop = top;
             editingInputs = false;
+            editingOpenWith = editingGenres = false;   // [custom]
             shelfOrder.clear();
             if (top) {
                 shelfOrder.addAll(HomeApps.topButtonKeys());
@@ -2163,6 +2263,7 @@ public class SettingsActivity extends Activity {
         private void openInputsEditor() {
             editingTop = false;
             editingInputs = true;
+            editingOpenWith = editingGenres = false;   // [custom]
             shelfOrder.clear();
             for (HomeApps.Item it : HomeApps.orderedInputs(getContext())) shelfOrder.add(it.key);
             rebuildShelfRows(HomeApps.inputCandidates(getContext()));
@@ -2174,9 +2275,14 @@ public class SettingsActivity extends Activity {
         /** The order row (shelf only), then selected apps, in shelf order, then the rest in the order they came. */
         private void rebuildShelfRows(List<String[]> candidates) {
             shelfRows.clear();
-            if (!editingTop && !editingInputs) shelfRows.add(new String[] {ORDER_ROW, Ui.tr("Shelf order")});
+            if (!editingTop && !editingInputs && !editingOpenWith && !editingGenres) shelfRows.add(new String[] {ORDER_ROW, Ui.tr("Shelf order")});   // [custom] not for Open with, genres
             for (String pkg : shelfOrder) {
                 for (String[] cand : candidates) if (cand[0].equals(pkg)) { shelfRows.add(cand); break; }
+            }
+            if (editingGenres) {   // [custom] the genres keep their own order; forgetting the rated titles comes first
+                shelfRows.clear();
+                shelfRows.addAll(candidates);
+                return;
             }
             for (String[] cand : candidates) {
                 if (!shelfOrder.contains(cand[0]) && !cand[0].equals(ORDER_ROW)) shelfRows.add(cand);
@@ -2185,7 +2291,7 @@ public class SettingsActivity extends Activity {
 
         /** The shelf puts the last app opened first, so the places set here don't apply (and can't be changed). */
         private boolean shelfOrderLocked() {
-            return !editingTop && !editingInputs && Prefs.shelfRecent();
+            return !editingTop && !editingInputs && !editingOpenWith && !editingGenres && Prefs.shelfRecent();   // [custom]
         }
 
         /** "My order" deletes the list of apps opened: nothing is kept while the shelf doesn't use it. */
@@ -2213,6 +2319,9 @@ public class SettingsActivity extends Activity {
             }
             if (editingTop) Prefs.setTopButtons(shelfOrder);
             else if (editingInputs) saveInputsOrder();
+            else if (editingOpenWith) Prefs.setOpenWith(shelfOrder);   // [custom]
+            else if (editingGenres && genreRowsMode) Prefs.setGenreRows(shelfOrder);   // [custom]
+            else if (editingGenres) Prefs.setTasteGenres(shelfOrder);   // [custom]
             else Prefs.setShelf(shelfOrder);
         }
 
@@ -2236,8 +2345,15 @@ public class SettingsActivity extends Activity {
                 switchShelfOrder();
                 return;
             }
+            if (pkg.equals(FORGET_ROW)) {   // [custom] Your taste: forget the rated titles, and the row goes
+                Prefs.forgetTaste();
+                shelfRows.remove(pickScroll + focus);
+                if (pickScroll + focus >= shelfRows.size()) focus = Math.max(0, shelfRows.size() - 1 - pickScroll);
+                return;
+            }
             if (shelfOrder.contains(pkg)) shelfOrder.remove(pkg);
-            else if (editingTop || editingInputs || shelfOrder.size() < HomeApps.maxShelf(getContext())) shelfOrder.add(pkg);
+            else if (editingGenres && genreRowsMode && shelfOrder.size() >= GenreRows.MAX_ROWS) return;   // [custom] three rows at most
+            else if (editingTop || editingInputs || editingOpenWith || editingGenres || shelfOrder.size() < HomeApps.maxShelf(getContext())) shelfOrder.add(pkg);   // [custom] editingOpenWith, editingGenres
             else return;
             refreshShelfRows(pkg);
         }
@@ -2260,7 +2376,8 @@ public class SettingsActivity extends Activity {
 
         private void drawShelfEditor(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
-            c.drawText(editingTop ? Ui.tr("Top Buttons") : editingInputs ? Ui.tr("Inputs") : Ui.tr("Shelf"),
+            c.drawText(editingTop ? Ui.tr("Top Buttons") : editingInputs ? Ui.tr("Inputs") : editingOpenWith ? Ui.tr("Open picks with")
+                    : editingGenres ? (genreRowsMode ? Ui.tr("Genre rows") : Ui.tr("Your taste")) : Ui.tr("Shelf"),   // [custom] Open picks with, Your taste, Genre rows
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             int rows = rowCount();
             boolean locked = shelfOrderLocked();
@@ -2297,12 +2414,15 @@ public class SettingsActivity extends Activity {
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
             float hy = (LIST_TOP + 20 + rows * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
-            if (!editingTop && !editingInputs && HomeApps.lowRam(getContext())) {
+            if (!editingTop && !editingInputs && !editingOpenWith && !editingGenres && HomeApps.lowRam(getContext())) {   // [custom]
                 c.drawText(Ui.tr("This TV has little memory, so the shelf holds fewer apps."), LIST_X * k + 30 * k, hy + 38 * k, hint);
             }
             int max = HomeApps.maxShelf(getContext());
             c.drawText(editingTop ? Ui.tr("OK adds or removes a button. ← → change the order.")
                     : editingInputs ? Ui.tr("OK shows or hides an input. ← → change the order.")
+                    : editingOpenWith ? Ui.tr("OK adds or removes an app. ← → change the order.")   // [custom]
+                    : editingGenres && genreRowsMode ? Ui.tr("OK adds a row under the shelf (up to 3). ← → change the order.")   // [custom]
+                    : editingGenres ? Ui.tr("OK picks the genres you like. Hold OK on a pick: Love it or Not for me.")   // [custom]
                     : locked && max == Integer.MAX_VALUE ? Ui.tr("OK adds or removes an app. The last one opened comes first.")
                     : locked ? Ui.trf("OK adds or removes (up to {n}). The last one opened comes first.", "n", max)
                     : max == Integer.MAX_VALUE ? Ui.tr("OK adds or removes an app. ← → change the order.")
@@ -2423,7 +2543,8 @@ public class SettingsActivity extends Activity {
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
                 float f = drawRowBackground(c, i);
                 rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
-                boolean locked = unavailable(i) != null, watchOff = !keys && from + i == WATCH_ROW && watchLocked();
+                boolean watchRow = screen == HOME_SETTINGS && from + i == WATCH_ROW;   // [custom] was only `from + i == WATCH_ROW`: the Picks screen has a 9th row now
+                boolean locked = unavailable(i) != null, watchOff = !keys && watchRow && watchLocked();
                 if (locked) values[from + i] = Ui.tr("Unavailable");
                 rowValue.setColor(blend(locked ? 0x59FFFFFF : 0xB3FFFFFF, locked ? 0x591C1C1E : 0xB31C1C1E, f));
                 if (watchOff) rowValue.setColor(blend(0x59FFFFFF, 0x591C1C1E, f));
@@ -2431,7 +2552,7 @@ public class SettingsActivity extends Activity {
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(labels[from + i], rowRect.left + 30 * k, base, rowLabel);
                 float right = rowRect.right - 30 * k;
-                if (!keys && !locked && from + i == WATCH_ROW) {
+                if (!keys && !locked && watchRow) {
                     float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
                     Symbols.draw(getContext(), c, "chevron_right", right - cw / 2, rowRect.centerY(), 22 * k,
                             blend(watchOff ? 0x33FFFFFF : 0x66FFFFFF, watchOff ? 0x331C1C1E : 0x991C1C1E, f));
@@ -2473,7 +2594,7 @@ public class SettingsActivity extends Activity {
                         : RemoteKeys.supported() ? Ui.tr("Disney and Globoplay: the TV itself controls those buttons.")
                         : Ui.tr("TCL remote buttons: on this TV they work as always."), LIST_X * k + 30 * k, hy + 38 * k, hint);
                 // No key service on this TV (RemoteKeys.FILTER_SAFE): inside other apps the buttons do nothing.
-                if (!RemoteKeys.FILTER_SAFE) c.drawText(Ui.tr("On this TV they work on Free My TV's home screen only."),
+                if (!RemoteKeys.FILTER_SAFE) c.drawText(Ui.tr("On this TV they work on Free My TV Enhanced's home screen only."),
                         LIST_X * k + 30 * k, hy + 76 * k, hint);
             }
         }
@@ -2551,6 +2672,12 @@ public class SettingsActivity extends Activity {
                 screen = PICKS;
                 pickScroll = 0;   // this list is short: it draws from row 0
                 focus = 0;
+            } else if (screen == PICKS && focus == cardFocusRow() + 2) {   // [custom] Open picks with
+                openOpenWithEditor();
+            } else if (screen == PICKS && focus == cardFocusRow() + 5) {   // [custom] Your taste
+                openGenresEditor(false);
+            } else if (screen == PICKS && focus == cardFocusRow() + 6) {   // [custom] Genre rows
+                openGenresEditor(true);
             } else if (screen == PICKS && focus == 1) {
                 services.clear();
                 services.addAll(Recs.installedServices(c));
