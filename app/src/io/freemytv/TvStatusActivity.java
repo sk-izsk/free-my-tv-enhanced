@@ -86,6 +86,12 @@ public class TvStatusActivity extends Activity {
         if (!isFinishing()) finish();
     }
 
+    /** Home, or anything else taking the screen: the panel goes, never left above the home screen or holding the keys. */
+    @Override protected void onPause() {
+        super.onPause();
+        if (!isFinishing()) finish();
+    }
+
     @Override protected void onDestroy() {
         open = false;
         main.removeCallbacksAndMessages(null);

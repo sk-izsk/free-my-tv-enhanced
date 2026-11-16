@@ -95,7 +95,9 @@ public class HomeActivity extends Activity {
         // TCL's Android 11 records the home activity as translucent (occludesParent=false) whatever its theme says:
         // Android then keeps the app just left visible, and home tasks are layered under all others, so that app stays
         // on screen over ours. Opaque again on every resume (setTranslucent is public from Android 11).
-        if (RemoteKeys.TCL && Build.VERSION.SDK_INT >= 30) setTranslucent(false);
+        // [custom] Hisense's Android 11 does the same (the Living room TV: a Nuvio or SmartTube video stayed on screen
+        // over a half-drawn home screen after Home).
+        if ((RemoteKeys.TCL || RemoteKeys.HISENSE) && Build.VERSION.SDK_INT >= 30) setTranslucent(false);
         if (prefsVersion != Prefs.version) {
             prefsVersion = Prefs.version;
             HomeData.get(this).settingsChanged();
