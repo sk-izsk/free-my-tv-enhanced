@@ -230,7 +230,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int watchIndex;
     private boolean watchAllowed = true;
     private boolean watchLoaded;   // read at least once: before that, no "nothing half-watched"
-    private String[] watchTitles, watchMetas, watchLeft, watchEp;   // [custom] the last two: the card's badges
+    private String[] watchTitles, watchMetas, watchLeft, watchRight, watchYear;   // [custom] the last three: the card's badges
     private float watchTextsK;
     private int watchTextsGen = -1;
     private LinearGradient watchSheen, watchRim;   // focus sheen and rim, made once per card size (not per frame)
@@ -4938,6 +4938,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         topMode = mode;
         if (modeChanged) closeMenu(false);
         watching = list;
+        if (!list.isEmpty() && Recs.hasKey(getContext())) {   // [custom] the badges (a lookup per new title, off this thread)
+            WatchInfo.load(getContext(), list, () -> post(() -> {
+                watchTitles = null;
+                heroDirty = true;
+                heroLayer.invalidate();
+                wake();
+            }));
+        }
         fixRows();   // [custom] the Continue Watching row came or went
         watchTitles = null;
         watchIndex = Math.min(watchIndex, Math.max(0, list.size() - 1));
@@ -4978,14 +4986,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         watchTitles = new String[n];
         watchMetas = new String[n];
         watchLeft = new String[n];
-        watchEp = new String[n];
-        TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta), bp = new TextPaint(lBadge == null ? lCardMeta : lBadge);
+        watchRight = new String[n];
+        watchYear = new String[n];
+        TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta);
         float width = WatchArt.W * k;
         for (int i = 0; i < n; i++) {
             WatchNext.Item it = watching.get(i);
-            watchLeft[i] = timeLeft(it);   // [custom] "23 min left" top left, the episode top right (cut to fit once)
-            watchEp[i] = it.episode == null || it.episode.isEmpty() ? null
-                    : TextUtils.ellipsize(it.episode, bp, width * 0.42f, TextUtils.TruncateAt.END).toString();
+            // [custom] The picks' badges (length top left, rating top right, year bottom left) from TMDB (WatchInfo);
+            // a badge only where the data is known.
+            String[] info = WatchInfo.get(it);
+            String len = info == null || info[1] == null || info[1].isEmpty() ? null : info[1];
+            String rate = info == null || info[0] == null || info[0].isEmpty() ? null : info[0];
+            watchYear[i] = info == null || info[2] == null || info[2].isEmpty() ? null : info[2];
+            watchLeft[i] = len;
+            watchRight[i] = rate;
             watchTitles[i] = TextUtils.ellipsize(it.title, tp, width, TextUtils.TruncateAt.END).toString();
             StringBuilder meta = new StringBuilder(it.app == null ? "" : it.app);
             if (it.episode != null) meta.append(meta.length() > 0 ? " · " : "").append(it.episode);
@@ -5109,8 +5123,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setAlpha(255);
             c.restore();
         }
-        drawBadge(c, cell, watchLeft[i], false, false);   // [custom]
-        drawBadge(c, cell, watchEp[i], true, false);
+        drawBadge(c, cell, watchLeft[i], false, false, 0);   // [custom]
+        drawBadge(c, cell, watchRight[i], true, false, 0);
+        drawBadge(c, cell, watchYear[i], false, true, progress >= 0 ? 16 * k * s : 0);   // above the progress bar
         c.drawText(watchTitles[i], textLeft, textTop + 46 * k, lCardTitle);
         if (!watchMetas[i].isEmpty()) c.drawText(watchMetas[i], textLeft, textTop + 80 * k, lCardMeta);
     }
@@ -5911,10 +5926,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** One pill in a corner of the card: top or bottom, left or right. */
     private void drawBadge(Canvas c, RectF card, String text, boolean right, boolean bottom) {
+        drawBadge(c, card, text, right, bottom, 0);
+    }
+
+    /** `raise`: a bottom pill sits this much higher (above the Continue Watching progress bar). */
+    private void drawBadge(Canvas c, RectF card, String text, boolean right, boolean bottom, float raise) {
         if (text == null || lBadge == null) return;
         float pad = 11 * k, bh = 34 * k, inset = 12 * k, tw = lBadge.measureText(text);
         float left = right ? card.right - inset - tw - 2 * pad : card.left + inset;
-        float top = bottom ? card.bottom - inset - bh : card.top + inset;
+        float top = bottom ? card.bottom - inset - bh - raise : card.top + inset;
         badge.set(left, top, left + tw + 2 * pad, top + bh);
         fill.setShader(null);
         fill.setColor(0x99101012);

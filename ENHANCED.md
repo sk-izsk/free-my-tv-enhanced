@@ -15,7 +15,7 @@ on Free My TV*.
 | **Picks (cards at the top)** | Trending titles on your services | Up to 7 cards per tab; a *Highlight* focus (the card pops up, no ring; Picks → Card focus); badges on each card: runtime or seasons, TMDB rating, and the year (a show's span, such as *2022–26*) |
 | **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card for *Love it* / *Not for me* |
 | **Open picks with** | The service's app | Any app that opens `nuvio://tmdb/...` links (Nuvio and its forks). With two or more, OK asks which one |
-| **Rows under the shelf** | – | *Continue Watching* as its own row, with badges (time left, episode) on each card; up to three *genre rows* (popular titles of a genre on your services) |
+| **Rows under the shelf** | – | *Continue Watching* as its own row, with the picks' badges (length, rating, year) on each card; up to three *genre rows* (popular titles of a genre on your services) |
 | **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title |
 | **All Apps** | Open, Move, shelf | Hold OK for a menu: Move, Add to / Remove from shelf, **Add to folder**, **Select several**, App info |
 | **Folders** | – | Apple TV style folders with a 2×2 preview; rename, delete, put a folder on the shelf, move apps between folders |

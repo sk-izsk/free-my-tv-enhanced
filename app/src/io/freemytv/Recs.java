@@ -1397,6 +1397,44 @@ final class Recs {
         return request(path, key);
     }
 
+    /**
+     * [custom] The Continue Watching row's badges: {rating, length, year} of TMDB's best match for a title ("★ 7.6",
+     * "1h 46m" or "3 seasons", "2022"), or null when nothing matches. A show is looked up first when `show`, else a
+     * movie first. Two small requests; WatchInfo caches the answer, so a title is looked up once.
+     */
+    static String[] titleBadges(String title, boolean show) throws IOException, org.json.JSONException {
+        String key = key();
+        if (key.isEmpty() || title == null || title.trim().isEmpty()) return null;
+        for (int pass = 0; pass < 2; pass++) {
+            boolean tv = pass == 0 ? show : !show;
+            JSONArray found = request("/search/" + (tv ? "tv" : "movie") + "?query=" + URLEncoder.encode(title.trim(), "UTF-8")
+                    + "&language=" + lang(), key).optJSONArray("results");
+            if (found == null || found.length() == 0) continue;
+            JSONObject o = found.getJSONObject(0);   // TMDB's most popular match, unless one has exactly this title
+            for (int i = 0; i < found.length(); i++) {
+                JSONObject f = found.getJSONObject(i);
+                if (title.trim().equalsIgnoreCase(f.optString(tv ? "name" : "title")) || title.trim().equalsIgnoreCase(f.optString(tv ? "original_name" : "original_title"))) {
+                    o = f;
+                    break;
+                }
+            }
+            int id = o.optInt("id");
+            String date = o.optString(tv ? "first_air_date" : "release_date", "");
+            String year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
+            String length;
+            if (tv) {
+                JSONObject d = request("/tv/" + id + "?language=" + lang(), key);
+                length = seasons(d.optInt("number_of_seasons"));
+                if (length == null) length = Ui.tr("Series");
+                if (year != null) year = yearSpan(year, d.optString("last_air_date", ""));
+            } else {
+                length = runtime(request("/movie/" + id + "?language=" + lang(), key).optInt("runtime"));
+            }
+            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year};
+        }
+        return null;
+    }
+
     private static final String REJECTED = "TMDB rejected the key";
 
     private static JSONObject request(String path, String key) throws IOException, org.json.JSONException {
