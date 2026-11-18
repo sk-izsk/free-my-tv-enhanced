@@ -1025,6 +1025,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lQuote = Ui.numbers(Ui.regular, 21 * k, L_FAINT);
         lTip = Ui.text(Ui.semibold, 25 * k, L_INK);
         lTip.setTextAlign(Paint.Align.CENTER);
+        lWeatherSub = Ui.text(Ui.medium, 25 * k, L_DIM);   // [custom] the high and low under the title line's weather
         lDate = Ui.text(Ui.semibold, 34 * k, L_DIM);
         lClock = Ui.numbers(Ui.light, 200 * k, L_INK);
         lClock.setLetterSpacing(-0.01f);
@@ -6003,7 +6004,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lWeather.setColor(tone(L_INK, WHITE));   // [custom] the text in the time's color
         c.drawText(titleWeather, x + sw + 12 * k, cy + Ui.halfCap(lWeather), lWeather);
         lWeather.setColor(was);
+        // [custom] The day's high and low under it, quieter: the unselected tabs' color (the same words as the drawer's card).
+        if (!Double.isNaN(wx.max) && !Double.isNaN(wx.min)) {
+            if (titleRangeAt != data.weatherAt || !Ui.language.equals(titleRangeLanguage)) {
+                titleRangeAt = data.weatherAt;
+                titleRangeLanguage = Ui.language;
+                titleRange = HomeData.highLow(wx, "  ");
+            }
+            lWeatherSub.setColor(lTab.getColor());
+            c.drawText(titleRange, x + sw + 12 * k, cy + Ui.halfCap(lWeather) + 34 * k, lWeatherSub);
+        }
     }
+
+    private String titleRange = "", titleRangeLanguage = "";
+    private long titleRangeAt = -1;
+    private Paint lWeatherSub;   // [custom] the high and low under the weather on the title's line
 
     /**
      * [custom] Under a highlighted card's title: its meta line (Trakt's reason first, then genre, length, year, service),
