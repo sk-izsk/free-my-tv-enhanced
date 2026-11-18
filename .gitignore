@@ -20,3 +20,6 @@ tools/.i18n-cache.json
 
 # Claude Code plugin state
 .omc/
+
+# Local JDK and Android SDK for building (not committed)
+.tools/
