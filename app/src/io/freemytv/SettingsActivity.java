@@ -109,6 +109,16 @@ public class SettingsActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (preview != null && preview.choosing()) {   // [custom] the Open with chooser is open: the keys are its
+            int code = event.getKeyCode();
+            boolean down = event.getAction() == KeyEvent.ACTION_DOWN, up = event.getAction() == KeyEvent.ACTION_UP;
+            if (code == KeyEvent.KEYCODE_DPAD_UP && down) preview.chooseMove(-1);
+            else if (code == KeyEvent.KEYCODE_DPAD_DOWN && down) preview.chooseMove(1);
+            else if ((code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) && up) {
+                if (preview.chooseSelect()) closePreview();
+            } else if (code == KeyEvent.KEYCODE_BACK && down) preview.chooseCancel();
+            return true;
+        }
         if (preview != null) {
             // Like the real screensaver: arrows, OK or Back close it (other keys go on to the system); with Watch from the
             // screensaver on, OK opens the title first.
@@ -122,6 +132,7 @@ public class SettingsActivity extends Activity {
                 case KeyEvent.KEYCODE_BACK:
                     if (event.getAction() == KeyEvent.ACTION_UP) {
                         boolean ok = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER || event.getKeyCode() == KeyEvent.KEYCODE_ENTER;
+                        if (ok && Prefs.saverWatch() && preview.chooser()) return true;   // [custom] ask which app first
                         if (ok && Prefs.saverWatch()) preview.watch();
                         closePreview();
                     }

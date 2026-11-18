@@ -51,6 +51,10 @@ before you do it, and let them do the taps on the TV.
   *Original* can bring it back.
 - Don't change the TV's picture, sound, network or account settings.
 - Keep the way back working: the *Original* mode and the watchdog.
+- Every Enhanced feature is documented and tested, because upstream knows nothing about it: a row in ENHANCED.md's
+  *What's new* table, a line in its on-TV checklist (*Testing Enhanced after a change or an upstream merge*), a README
+  bullet, strings in every language, and a before/after `./perf-check.sh <IP>` on a TV (same keys, same TV, run twice;
+  a feature must not make the home screen slower). Run that section after every `git merge upstream/main` too.
 
 ## Installing it for someone
 

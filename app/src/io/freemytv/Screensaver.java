@@ -30,8 +30,18 @@ public class Screensaver extends DreamService {
         if (!isInteractive()) return super.dispatchKeyEvent(event);
         int code = event.getKeyCode();
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+        if (view != null && view.choosing()) {   // [custom] the Open with chooser is open: the keys are its
+            boolean down = event.getAction() == KeyEvent.ACTION_DOWN, up = event.getAction() == KeyEvent.ACTION_UP;
+            if (code == KeyEvent.KEYCODE_DPAD_UP && down) view.chooseMove(-1);
+            else if (code == KeyEvent.KEYCODE_DPAD_DOWN && down) view.chooseMove(1);
+            else if (ok && up) {
+                if (view.chooseSelect()) finish();   // an app opened; Cancel goes back to the pictures
+            } else if (code == KeyEvent.KEYCODE_BACK && down) view.chooseCancel();
+            return true;
+        }
         // OK acts when it's released, so the app it opens doesn't get the release; any other key closes at once.
         if (ok ? event.getAction() == KeyEvent.ACTION_UP : event.getAction() == KeyEvent.ACTION_DOWN) {
+            if (ok && view != null && view.chooser()) return true;   // [custom] a pick going to Nuvio: ask which app first
             if (ok && view != null) view.watch();
             finish();
         }

@@ -41,9 +41,17 @@ final class WatchNext {
         final Uri pictureUri;
         final String pictureKey, bannerKey;
         private final String picture;
+        final Uri posterUri;            // [custom] the tall card's picture: the poster before the thumbnail
+        final String posterKey;
 
         Item(String pkg, String poster, String thumbnail) {
             this.pkg = pkg;
+            String tall = poster != null ? poster : thumbnail;
+            Uri turi = tall == null ? null : Uri.parse(tall);
+            posterUri = turi != null && ("content".equalsIgnoreCase(turi.getScheme())
+                    || "android.resource".equalsIgnoreCase(turi.getScheme())
+                    || "https".equalsIgnoreCase(turi.getScheme())) ? turi : null;
+            posterKey = posterUri == null ? null : tall;
             picture = thumbnail != null ? thumbnail : poster;
             Uri uri = picture == null ? null : Uri.parse(picture);
             pictureUri = uri != null && ("content".equalsIgnoreCase(uri.getScheme())
