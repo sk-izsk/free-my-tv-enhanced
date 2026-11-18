@@ -12,12 +12,18 @@ k() { adb -s "$T" shell input keyevent "$@"; }
 k KEYCODE_WAKEUP; k KEYCODE_HOME; sleep 4
 k KEYCODE_HOME; sleep 3                      # settle on the home screen, cards loaded
 pid=$(adb -s "$T" shell pidof $P:home | tr -d "\r"); adb -s "$T" shell dumpsys gfxinfo $pid reset >/dev/null
-# Cards: right across and back, then down to the shelf, across and back, then up again.
+# Cards: right across and back, then down to the shelf, across and back, down to the Continue Watching row and back, then up.
 for i in 1 2 3 4 5; do k KEYCODE_DPAD_RIGHT; sleep 0.6; done
 for i in 1 2 3 4 5; do k KEYCODE_DPAD_LEFT; sleep 0.6; done
 k KEYCODE_DPAD_DOWN; sleep 1
 for i in 1 2 3 4 5 6; do k KEYCODE_DPAD_RIGHT; sleep 0.5; done
 for i in 1 2 3 4 5 6; do k KEYCODE_DPAD_LEFT; sleep 0.5; done
+# [custom] The Continue Watching row under the shelf (badges), across and back, then up again. With the row off, this
+# walks the drawer instead: same keys, so numbers stay comparable on one TV.
+k KEYCODE_DPAD_DOWN; sleep 1.5
+for i in 1 2 3 4 5; do k KEYCODE_DPAD_RIGHT; sleep 0.5; done
+for i in 1 2 3 4 5; do k KEYCODE_DPAD_LEFT; sleep 0.5; done
+k KEYCODE_DPAD_UP; sleep 1
 k KEYCODE_DPAD_UP; sleep 2
 g=$(adb -s "$T" shell dumpsys gfxinfo $pid)
 m=$(adb -s "$T" shell dumpsys meminfo -s $P:home | grep -m1 'TOTAL PSS' | awk '{print $3}')

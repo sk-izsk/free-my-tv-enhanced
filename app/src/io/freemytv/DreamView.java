@@ -268,6 +268,15 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         titlePaint.setLetterSpacing(0.005f);
         metaPaint = Ui.text(Ui.medium, 29 * k, 0xC7FFFFFF);
         hintPaint = Ui.text(Ui.regular, 24 * k, 0x99FFFFFF);
+        // [custom] The Open with chooser over the pictures.
+        chooseTitle = Ui.text(Ui.semibold, 38 * k, 0xFFFFFFFF);
+        chooseSub = Ui.text(Ui.regular, 28 * k, 0x99FFFFFF);
+        chooseOption = Ui.text(Ui.medium, 34 * k, 0xFFFFFFFF);
+        chooseDim.setColor(0x99000000);
+        choosePanel.setColor(0xF21C1C1E);
+        choosePanel.setAntiAlias(true);
+        chooseRow.setColor(0x38FFFFFF);
+        chooseRow.setAntiAlias(true);
         metaPaint.setLetterSpacing(0.014f);
         Symbols.warmWeather(getContext(), 30 * k);   // the corner's
         Symbols.warmWeather(getContext(), 32 * k);   // under the clock
@@ -765,7 +774,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             c.restore();
             if (s.pick.meta != null && !s.pick.meta.isEmpty()) c.drawText(s.pick.meta, x, metaBase, metaPaint);
             if (hint) {
-                c.drawText(Ui.trf("Press OK to watch on {app} · any other button to close", "app", Recs.serviceName(s.pick)),
+                c.drawText(offersChoice(s.pick) ? Ui.tr("Press OK to choose how to watch · any other button to close")   // [custom]
+                        : Ui.trf("Press OK to watch on {app} · any other button to close", "app", Recs.serviceName(s.pick)),
                         x, META_BASE * k, hintPaint);
             }
         } finally {
@@ -778,6 +788,86 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private Recs.Pick watchable() {
         Slide s = incoming != null && SystemClock.uptimeMillis() - incoming.startedAt > 1300 ? incoming : current;
         return s == null || s.pick.photo != null || s.pick.pkg == null ? null : s.pick;
+    }
+
+    // MARK: - [custom] Open with, over the screensaver: the picks' chooser (OK with Watch from the screensaver on)
+
+    private Recs.Pick choosePick;
+    private final List<String[]> chooseApps = new java.util.ArrayList<>();
+    private int chooseIndex;
+    private String chooseHead = "";
+    private Paint chooseTitle, chooseSub, chooseOption;
+    private final Paint chooseDim = new Paint(), choosePanel = new Paint(), chooseRow = new Paint();
+    private final RectF chooseRect = new RectF();
+
+    /** A pick going to Nuvio, with two or more apps chosen (Home Settings > Picks > Open picks with): OK asks which one. */
+    private boolean offersChoice(Recs.Pick p) {
+        return p != null && "nuvio".equals(p.app) && p.link != null && OpenWith.chosen(getContext()).size() >= 2;
+    }
+
+    /** OK: the chooser opens over the title on screen (true), or there's nothing to choose and the caller uses watch(). */
+    boolean chooser() {
+        Recs.Pick p = watchable();
+        if (!offersChoice(p) || chooseTitle == null) return false;
+        chooseApps.clear();
+        chooseApps.addAll(OpenWith.chosen(getContext()));
+        choosePick = p;
+        chooseIndex = 0;
+        chooseHead = TextUtils.ellipsize(p.title == null ? "" : p.title, new TextPaint(chooseTitle), (720 - 88) * k,
+                TextUtils.TruncateAt.END).toString();
+        invalidate();
+        return true;
+    }
+
+    boolean choosing() {
+        return choosePick != null;
+    }
+
+    void chooseMove(int d) {
+        chooseIndex = Math.max(0, Math.min(chooseApps.size(), chooseIndex + d));   // the apps, then Cancel
+        invalidate();
+    }
+
+    void chooseCancel() {
+        choosePick = null;
+        invalidate();
+    }
+
+    /** OK in the chooser: true when it opened an app (the screensaver then closes), false for Cancel (back to the pictures). */
+    boolean chooseSelect() {
+        Recs.Pick p = choosePick;
+        int i = chooseIndex;
+        choosePick = null;
+        invalidate();
+        if (p == null || i >= chooseApps.size()) return false;
+        String[] app = chooseApps.get(i);
+        boolean opened = HomeApps.open(getContext(), HomeApps.app(app[0], app[1], p.link), null);
+        if (!opened) AppLog.w("screensaver: couldn't open “" + p.title + "” in " + app[0]);
+        return true;
+    }
+
+    @Override public void onDrawForeground(Canvas c) {
+        super.onDrawForeground(c);
+        if (choosePick != null) drawChooser(c);
+    }
+
+    private void drawChooser(Canvas c) {
+        int n = chooseApps.size() + 1;
+        float width = 720 * k, pad = 44 * k, row = 76 * k, step = 80 * k;
+        float height = pad + (34 + 38 + 32) * k + (n - 1) * step + row + 16 * k;
+        float left = (w - width) / 2, top = (h - height) / 2;
+        c.drawRect(0, 0, w, h, chooseDim);
+        chooseRect.set(left, top, left + width, top + height);
+        c.drawRoundRect(chooseRect, 36 * k, 36 * k, choosePanel);
+        c.drawText(chooseHead, left + pad, top + pad + 34 * k, chooseTitle);
+        c.drawText(Ui.tr("Open with"), left + pad, top + pad + 72 * k, chooseSub);
+        float y = top + pad + 104 * k;
+        for (int i = 0; i < n; i++) {
+            chooseRect.set(left + 16 * k, y + i * step, left + width - 16 * k, y + i * step + row);
+            if (i == chooseIndex) c.drawRoundRect(chooseRect, 22 * k, 22 * k, chooseRow);
+            c.drawText(i < chooseApps.size() ? chooseApps.get(i)[1] : Ui.tr("Cancel"), left + pad,
+                    chooseRect.centerY() + Ui.halfCap(chooseOption), chooseOption);
+        }
     }
 
     /** OK with Watch from the screensaver on: the title opens in its app, as its card does on the home screen. */

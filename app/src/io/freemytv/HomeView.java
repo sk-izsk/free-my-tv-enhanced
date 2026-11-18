@@ -984,6 +984,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         screen.set(0, 0, w, h);
         scene.setSize(w, h);
         watchArt.setScale(k);
+        watchArt.setTall(tallWatch());   // [custom]
         makePaints();
         gridLabels = null;
         clockMinute = -1;
@@ -1533,7 +1534,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Contrast changes only with the background or the day/night text colours. */
     private void applyWatchContrast() {
         int card = blend(tintFrom, tintTo, Ui.clamp(tintMix.value));
-        int behind = plainAt((L_CARDS_TOP + WatchArt.H + 70) * k / Math.max(1, h), card);
+        int behind = plainAt((L_CARDS_TOP + watchH() + 70) * k / Math.max(1, h), card);
         int quoteBg = plainAt((L_TABBAR_TOP + L_TABBAR_H / 2) * k / Math.max(1, h), card);
         int title = lCardTitle.getColor(), meta = lCardMeta.getColor(), quote = lQuote.getColor();
         if (!watchColorsReady || behind != watchTextBg || quoteBg != watchQuoteBg
@@ -2550,8 +2551,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         heroChanged |= aim(watchFocus, !sheetOpen && zone == Z_WATCH ? watchIndex : -1, snap);
         updateTint();
-        // The row scrolls so the focused card is at most the third one on screen.
-        float watchTo = Math.max(0, Math.min(watchIndex - 2, watching.size() - 3));
+        // The row scrolls so the focused card is at most the third one on screen ([custom] the fifth, on the tall cards).
+        float watchTo = watchScrollFor(watchIndex);
         if (watchScroll.target != watchTo || snap) {
             heroChanged = true;
             if (snap) watchScroll.snap(watchTo); else watchScroll.target = watchTo;
@@ -3140,7 +3141,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             watchRect(i, hitBox);
             if (hitBox.left > w || hitBox.right <= watchLeftEdge()) continue;
             if (!hitBox.contains(x, y)) continue;
-            return still && Math.max(0, Math.min(i - 2, watching.size() - 3)) != watchScroll.target ? -1 : i;
+            return still && watchScrollFor(i) != watchScroll.target ? -1 : i;
         }
         return -1;
     }
@@ -4939,6 +4940,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         topMode = mode;
+        if (watchArt != null) watchArt.setTall(tallWatch());   // [custom] the tall cards' pictures (the posters) or the wide ones
         if (modeChanged) closeMenu(false);
         watching = list;
         if (!list.isEmpty() && Recs.hasKey(getContext())) {   // [custom] the badges (a lookup per new title, off this thread)
@@ -4977,10 +4979,34 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Card i's place on screen (without its focus growth), scrolled with the row. */
     private void watchRect(int i, RectF out) {
-        float step = (WatchArt.W + WATCH_GAP) * k;
+        float step = (watchW() + watchGap()) * k;
         float x = MARGIN * k + i * step - watchScroll.value * step;
         float y = (cwRowActive() ? cwTop() + 70 : L_CARDS_TOP) * k;   // [custom] the row under the shelf
-        out.set(x, y, x + WatchArt.W * k, y + WatchArt.H * k);
+        out.set(x, y, x + watchW() * k, y + watchH() * k);
+    }
+
+    // [custom] Continue Watching on top has the picks' cards (tall, five across, the same gap); the row under the shelf
+    // keeps its wide ones. The two never show together.
+    private boolean tallWatch() {
+        return continueMode();
+    }
+
+    private float watchW() {
+        return tallWatch() ? L_TALL_W : WatchArt.W;
+    }
+
+    private float watchH() {
+        return tallWatch() ? L_CARD_H : WatchArt.H;
+    }
+
+    private float watchGap() {
+        return tallWatch() ? L_CARD_GAP : WATCH_GAP;
+    }
+
+    /** The row's scroll (in cards) that shows card i: at most the fifth on screen (tall, as the picks) or the third. */
+    private float watchScrollFor(int i) {
+        int across = tallWatch() ? 5 : 3;
+        return Math.max(0, Math.min(i - (across - 1), watching.size() - across));
     }
 
     /** Each card's title and details line ("Netflix · S2 E5 · 23 min left"), cut to the card's width once per list. */
@@ -4992,7 +5018,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         watchRight = new String[n];
         watchYear = new String[n];
         TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta);
-        float width = WatchArt.W * k;
+        float width = watchW() * k, metaWidth = (tallWatch() ? WatchArt.W : watchW()) * k;   // [custom] a tall card's meta is shown wider, as the picks'
         for (int i = 0; i < n; i++) {
             WatchNext.Item it = watching.get(i);
             // [custom] The picks' badges (length top left, rating top right, year bottom left) from TMDB (WatchInfo);
@@ -5008,7 +5034,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (it.episode != null) meta.append(meta.length() > 0 ? " · " : "").append(it.episode);
             String left = timeLeft(it);
             if (left != null) meta.append(meta.length() > 0 ? " · " : "").append(left);
-            watchMetas[i] = TextUtils.ellipsize(meta.toString(), mp, width, TextUtils.TruncateAt.END).toString();
+            watchMetas[i] = TextUtils.ellipsize(meta.toString(), mp, metaWidth, TextUtils.TruncateAt.END).toString();
         }
         watchTextsK = k;
         watchTextsGen = Ui.generation;
@@ -5071,9 +5097,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         watchRect(i, cell);
         if (cell.left > w || cell.right <= watchLeftEdge()) return;   // scrolled off screen
         WatchNext.Item it = watching.get(i);
-        float v = watchFocus[i].value, f = Ui.clamp(v), s = 1 + 0.05f * v;
+        boolean tallCard = tallWatch();   // [custom]
+        float v = watchFocus[i].value, f = Ui.clamp(v), s = 1 + 0.07f * v;   // [custom] the picks' pop (7%, no ring)
         float bw = cell.width(), bh = cell.height(), r0 = 18 * k, r = r0 * s;
-        float cx = cell.centerX(), cy = cell.centerY() - 6 * k * v, textLeft = cell.left, textTop = cell.bottom;
+        float cx = cell.centerX(), cy = cell.centerY() - 10 * k * v, textLeft = cell.left, textTop = cell.bottom;
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
@@ -5083,7 +5110,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
-        Bitmap img = watchArt.get(it.pictureUri, it.pictureKey, it.bannerKey, it.pkg);
+        Bitmap img = tallCard ? watchArt.get(it.posterUri, it.posterKey, it.bannerKey, it.pkg)   // [custom] the poster on the tall card
+                : watchArt.get(it.pictureUri, it.pictureKey, it.bannerKey, it.pkg);
         if (img != null) {
             roundImage(c, img, watchArt.shader(img), cell, r);
         } else {
@@ -5121,7 +5149,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setShader(watchRim);
             rim.setAlpha(alpha);
             rim.setStrokeWidth(2.5f * k / s);
-            c.drawRoundRect(tmp, r0, r0, rim);
+            if (!cardHighlight) c.drawRoundRect(tmp, r0, r0, rim);   // [custom] no outline: the card pops up, as the picks'
             rim.setStrokeWidth(2.5f * k);
             rim.setAlpha(255);
             c.restore();
@@ -5130,7 +5158,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawBadge(c, cell, watchRight[i], true, false, 0);
         drawBadge(c, cell, watchYear[i], false, true, progress >= 0 ? 16 * k * s : 0);   // above the progress bar
         c.drawText(watchTitles[i], textLeft, textTop + 46 * k, lCardTitle);
-        if (!watchMetas[i].isEmpty()) c.drawText(watchMetas[i], textLeft, textTop + 80 * k, lCardMeta);
+        if (watchMetas[i].isEmpty()) return;
+        if (!tallCard) {
+            c.drawText(watchMetas[i], textLeft, textTop + 80 * k, lCardMeta);
+            return;
+        }
+        // [custom] A tall card's details line is for the focused card only, wider than the card, as the picks' (drawHighlightMeta).
+        if (f < 0.02f) return;
+        float tw = lCardMeta.measureText(watchMetas[i]), right = textLeft + watchW() * k;
+        float mx = textLeft + tw <= CONTENT_R * k ? textLeft : Math.max(MARGIN * k, right - tw);
+        int a = lCardMeta.getAlpha();
+        lCardMeta.setAlpha(Math.round(a * f));
+        c.drawText(watchMetas[i], mx, textTop + 80 * k, lCardMeta);
+        lCardMeta.setAlpha(a);
     }
 
     /** Resumes it where you left it (the app's own link); if that link can't be used, the app itself. */
@@ -5486,25 +5526,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /**
      * [custom] OK on a Continue Watching card: the picks' chooser with the card's own app first ("default"), then the apps
      * of Home Settings > Continue Watching opens with, which open the title's Nuvio link (the TMDB id WatchInfo found).
-     * False, and the card just opens as before, when the title has no TMDB match or no other app is chosen.
+     * With no TMDB match (no title link) the chooser still opens, headed "Open with (search manually)": the other apps open
+     * at their home. False, and the card just opens as before, only when no other app is chosen.
      */
     private boolean showWatchWith(WatchNext.Item it) {
         if (menuOpen || menuTitlePaint == null) return false;
-        String[] ref = WatchInfo.ref(it);
-        if (ref == null) return false;
+        String[] ref = WatchInfo.ref(it);   // null: no TMDB match (or no key, or not looked up yet): no title link to hand over
         List<String[]> apps = new ArrayList<>();
         for (String[] a : OpenWith.chosen(activity)) if (!a[0].equals(it.pkg)) apps.add(a);   // its own app is option 0
         if (apps.isEmpty()) return false;
         Recs.Pick p = new Recs.Pick();
-        try {
-            p.id = Integer.parseInt(ref[1]);
-        } catch (NumberFormatException e) {
-            return false;
-        }
-        p.kind = ref[0];
         p.title = it.title;
         p.app = "nuvio";
-        p.link = Recs.nuvioLink(p.kind, p.id);
+        if (ref != null) {
+            try {
+                p.id = Integer.parseInt(ref[1]);
+                p.kind = ref[0];
+                p.link = Recs.nuvioLink(p.kind, p.id);
+            } catch (NumberFormatException e) {
+                p.link = null;
+                ref = null;
+            }
+        }   // no link: the other app opens at its home, and you search the title there ("Open with (search manually)")
         float width = (MENU_W - 2 * MENU_PAD) * k;
         menuItem = null;
         menuOpenPick = p;
@@ -5512,7 +5555,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         menuApps.clear();
         menuApps.addAll(apps);
         menuTitle = TextUtils.ellipsize(it.title, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
-        menuSub = Ui.tr("Open with");
+        menuSub = ref != null ? Ui.tr("Open with") : Ui.tr("Open with (search manually)");
         menuOptions[0] = TextUtils.ellipsize(appName(it), new TextPaint(menuOptionPaint), width, TextUtils.TruncateAt.END).toString();
         for (int i = 0; i < apps.size(); i++) {
             menuOptions[i + 1] = TextUtils.ellipsize(apps.get(i)[1], new TextPaint(menuOptionPaint), width, TextUtils.TruncateAt.END).toString();

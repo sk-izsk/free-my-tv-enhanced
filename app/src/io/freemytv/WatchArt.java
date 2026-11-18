@@ -79,9 +79,26 @@ final class WatchArt {
         return fetch(bannerKey, null, pkg);
     }
 
+    /** [custom] The tall card (Continue Watching on top, as the picks' cards): 320×442 in the 1920×1080 layout. */
+    static final int TALL_W = 320, TALL_H = 442;
+    private volatile float scale = 1;
+    private volatile boolean tall;
+
     /** The UI's scale (width / 1920): pictures already made at another size are made again. */
     void setScale(float k) {
-        int width = Math.max(1, Math.round(W * k)), height = Math.max(1, Math.round(H * k));
+        scale = k;
+        resize();
+    }
+
+    /** [custom] The pictures for the tall card (the poster, as the picks) or the wide one (16:9); made again on a change. */
+    void setTall(boolean on) {
+        tall = on;
+        resize();
+    }
+
+    private void resize() {
+        float k = scale;
+        int width = Math.max(1, Math.round((tall ? TALL_W : W) * k)), height = Math.max(1, Math.round((tall ? TALL_H : H) * k));
         if (width == pw && height == ph) return;
         pw = width;
         ph = height;
@@ -186,7 +203,7 @@ final class WatchArt {
         }
         Bitmap src = BitmapFactory.decodeByteArray(data, 0, data.length, opts);
         if (src == null) throw new IOException("unreadable picture");
-        // Centre crop to 16:9.
+        // Centre crop to the card's shape (16:9, or the tall card's).
         int sw = src.getWidth(), sh = src.getHeight();
         Rect from = (long) sw * ch > (long) sh * cw ? new Rect((sw - sh * cw / ch) / 2, 0, (sw + sh * cw / ch) / 2, sh)
                 : new Rect(0, (sh - sw * ch / cw) / 2, sw, (sh + sw * ch / cw) / 2);
@@ -235,8 +252,11 @@ final class WatchArt {
         // TV banners are 16:9 already: edge to edge; an icon goes in the middle.
         boolean wide = d.getIntrinsicWidth() > d.getIntrinsicHeight();
         int s = Math.round(ch * 0.5f);
-        if (wide) d.setBounds(0, 0, cw, ch);
-        else d.setBounds((cw - s) / 2, (ch - s) / 2, (cw + s) / 2, (ch + s) / 2);
+        if (wide) {   // [custom] on the tall card the banner keeps its 16:9, in the middle
+            int hh = Math.min(ch, Math.round(cw * 9f / 16));
+            d.setBounds(0, (ch - hh) / 2, cw, (ch + hh) / 2);
+        }
+        else d.setBounds((cw - s) / 2, (ch - s) / 2, (cw + s) / 2, (ch + s) / 2);   // (an icon: half the card's height)
         d.draw(c);
         return out;
     }

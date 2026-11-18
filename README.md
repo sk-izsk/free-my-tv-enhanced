@@ -23,7 +23,9 @@ uninstalled, and one button brings the factory home screen back.
   choose**.
 - **Your taste:** suggestions from the genres and titles you like (*Love it* / *Not for me*)
 - **Badges on every card:** runtime or seasons, rating, and the year (a show's span, like *2022–26*)
-- **Continue Watching and genre rows** under the shelf
+- **Continue Watching and genre rows** under the shelf, with the same badges; OK on a Continue Watching card asks
+  which app to open it in (its own, or your Nuvio apps)
+- **A weather icon in the conditions' colors**, a card that pops up when focused, and a livelier screensaver
 - **Your drawer, your way:** choose which shortcuts and top buttons show, and their order
 - **Performance mode** for slower TVs
 - **Several TVs:** copy one TV's settings, folders and remote buttons to another
