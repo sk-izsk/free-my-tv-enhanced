@@ -6015,7 +6015,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setShader(lightRims[i]);
             rim.setAlpha(alpha);
             rim.setStrokeWidth(2.5f * k / s);
-            c.drawRoundRect(tmp, r0, r0, rim);
+            if (!cardHighlight) c.drawRoundRect(tmp, r0, r0, rim);   // [custom] no outline when it pops up
             rim.setStrokeWidth(2.5f * k);
             rim.setAlpha(255);
             c.restore();
