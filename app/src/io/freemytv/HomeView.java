@@ -244,6 +244,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int menuCount = 3;
     /** [custom] The pick the Open with chooser is for (null for Continue Watching's menu), and the apps it lists. */
     private Recs.Pick menuOpenPick;
+    /** [custom] A Continue Watching card's Open with chooser: the card (option 0 is its own app, then menuApps), else null. */
+    private WatchNext.Item menuWatchSource;
     /** [custom] The All Apps app whose menu is open (Move, shelf, App info), or null. */
     private HomeApps.Item menuAppItem;
     /** [custom] Folders (phase 6): which of the app menus is open, and the open folder's state. */
@@ -3492,6 +3494,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         } else if (zone == Z_WATCH) {
             if (watchIndex >= watching.size()) return;
+            if (showWatchWith(watching.get(watchIndex))) return;   // [custom] its app or another one: ask which
             click.open();
             openWatching(watching.get(watchIndex));
             return;
@@ -5457,6 +5460,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float width = (MENU_W - 2 * MENU_PAD) * k;
         menuItem = null;
         menuOpenPick = p;
+        menuWatchSource = null;   // [custom]
         menuApps.clear();
         menuApps.addAll(apps);
         menuTitle = TextUtils.ellipsize(p.title, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
@@ -5479,8 +5483,68 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return true;
     }
 
-    /** The chooser's option: the pick's page in that app (the same link; only the app changes), or Cancel. */
-    private void openPickWith(Recs.Pick p, int choice) {
+    /**
+     * [custom] OK on a Continue Watching card: the picks' chooser with the card's own app first ("default"), then the apps
+     * of Home Settings > Continue Watching opens with, which open the title's Nuvio link (the TMDB id WatchInfo found).
+     * False, and the card just opens as before, when the title has no TMDB match or no other app is chosen.
+     */
+    private boolean showWatchWith(WatchNext.Item it) {
+        if (menuOpen || menuTitlePaint == null) return false;
+        String[] ref = WatchInfo.ref(it);
+        if (ref == null) return false;
+        List<String[]> apps = new ArrayList<>();
+        for (String[] a : OpenWith.chosenWatch(activity)) if (!a[0].equals(it.pkg)) apps.add(a);   // its own app is option 0
+        if (apps.isEmpty()) return false;
+        Recs.Pick p = new Recs.Pick();
+        try {
+            p.id = Integer.parseInt(ref[1]);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        p.kind = ref[0];
+        p.title = it.title;
+        p.app = "nuvio";
+        p.link = Recs.nuvioLink(p.kind, p.id);
+        float width = (MENU_W - 2 * MENU_PAD) * k;
+        menuItem = null;
+        menuOpenPick = p;
+        menuWatchSource = it;
+        menuApps.clear();
+        menuApps.addAll(apps);
+        menuTitle = TextUtils.ellipsize(it.title, new TextPaint(menuTitlePaint), width, TextUtils.TruncateAt.END).toString();
+        menuSub = Ui.tr("Open with");
+        menuOptions[0] = TextUtils.ellipsize(appName(it), new TextPaint(menuOptionPaint), width, TextUtils.TruncateAt.END).toString();
+        for (int i = 0; i < apps.size(); i++) {
+            menuOptions[i + 1] = TextUtils.ellipsize(apps.get(i)[1], new TextPaint(menuOptionPaint), width, TextUtils.TruncateAt.END).toString();
+        }
+        menuOptions[apps.size() + 1] = Ui.tr("Cancel");
+        menuCount = apps.size() + 2;
+        layoutMenu();
+        menuOpen = true;
+        menuIndex = 0;
+        menuPick.snap(0);
+        menu.target = 1;
+        menuLayer.setVisibility(VISIBLE);
+        menuLayer.invalidate();
+        wake();
+        click.open();
+        spoken.focusMoved();
+        return true;
+    }
+
+    /**
+     * The chooser's option: the pick's page in that app (the same link; only the app changes), or Cancel. From a
+     * Continue Watching card (`watch`), option 0 is the card's own app.
+     */
+    private void openPickWith(Recs.Pick p, int choice, WatchNext.Item watch) {
+        if (watch != null) {
+            if (choice == 0) {
+                click.open();
+                openWatching(watch);
+                return;
+            }
+            choice--;
+        }
         if (choice >= menuApps.size()) {
             click.move();
             return;
@@ -5488,7 +5552,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         String[] app = menuApps.get(choice);
         click.open();
         HomeApps.Item it = HomeApps.app(app[0], app[1], p.link);
-        RectF r = cardRects[Math.min(cardIndex, cardRects.length - 1)];
+        RectF r = watch != null ? new RectF() : cardRects[Math.min(cardIndex, cardRects.length - 1)];
+        if (watch != null) watchRect(Math.min(watchIndex, Math.max(0, watching.size() - 1)), r);
         boolean opened = HomeApps.open(activity, it, this, Math.round(r.left), Math.round(r.top),
                 Math.round(r.width()), Math.round(r.height()));
         if (!opened) showToast(Ui.trf("Couldn't open {app}.", "app", app[1]));
@@ -5545,6 +5610,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean was = menuOpen;
         menuOpen = false;
         menuOpenPick = null;   // [custom]
+        menuWatchSource = null;   // [custom]
         menuAppItem = null;    // [custom]
         menuRatePick = null;   // [custom]
         menuMode = M_APP;
@@ -5611,6 +5677,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         WatchNext.Item it = menuItem;
         int choice = menuIndex;
         Recs.Pick openPick = menuOpenPick;   // [custom] the Open with chooser
+        WatchNext.Item watchSource = menuWatchSource;   // [custom] ... of a Continue Watching card
         HomeApps.Item appItem = menuAppItem;   // [custom] the All Apps menu
         int mode = menuMode;
         Recs.Pick ratePick = menuRatePick;      // [custom] Love it / Not for me
@@ -5620,7 +5687,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (openPick != null) {
-            openPickWith(openPick, choice);
+            openPickWith(openPick, choice, watchSource);
             return;
         }
         if (appItem != null) {

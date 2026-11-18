@@ -1430,7 +1430,8 @@ final class Recs {
             } else {
                 length = runtime(request("/movie/" + id + "?language=" + lang(), key).optInt("runtime"));
             }
-            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year};
+            // + the kind and TMDB id: a card's Open with links the title in Nuvio (nuvioLink) like a pick's
+            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year, tv ? "tv" : "movie", String.valueOf(id)};
         }
         return null;
     }

@@ -25,7 +25,14 @@ final class WatchInfo {
     private static final String SEP = "\u0001";
 
     private static String key(WatchNext.Item it) {
-        return "v2|" + it.title.toLowerCase(Locale.ROOT) + "|" + (it.episode != null) + "|" + Ui.language;   // v2: exact-title match
+        return "v3|" + it.title.toLowerCase(Locale.ROOT) + "|" + (it.episode != null) + "|" + Ui.language;   // v3: with the TMDB id
+    }
+
+    /** {kind ("movie" or "tv"), TMDB id} of the title, or null when it isn't known (no key, no match, not looked up yet). */
+    static String[] ref(WatchNext.Item it) {
+        String[] v = get(it);
+        if (v == null || v.length < 5 || v[3] == null || v[3].isEmpty() || v[4] == null || v[4].isEmpty()) return null;
+        return new String[] {v[3], v[4]};
     }
 
     /** {rating, length, year} (each may be null), or null when not known (yet). Memory only: safe while drawing. */
