@@ -5493,7 +5493,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         String[] ref = WatchInfo.ref(it);
         if (ref == null) return false;
         List<String[]> apps = new ArrayList<>();
-        for (String[] a : OpenWith.chosenWatch(activity)) if (!a[0].equals(it.pkg)) apps.add(a);   // its own app is option 0
+        for (String[] a : OpenWith.chosen(activity)) if (!a[0].equals(it.pkg)) apps.add(a);   // its own app is option 0
         if (apps.isEmpty()) return false;
         Recs.Pick p = new Recs.Pick();
         try {

@@ -44,17 +44,8 @@ final class OpenWith {
 
     /** The chosen apps still on the TV, in the owner's order, as [package, label]; at most SHOWN. */
     static List<String[]> chosen(Context c) {
-        return chosen(c, Prefs.openWith());
-    }
-
-    /** [custom] The apps a Continue Watching card can open in besides its own (Home Settings > Continue Watching opens with). */
-    static List<String[]> chosenWatch(Context c) {
-        return chosen(c, Prefs.openWithWatch());
-    }
-
-    private static List<String[]> chosen(Context c, List<String> wanted) {
         List<String[]> all = candidates(c), out = new ArrayList<>();
-        for (String pkg : wanted) {
+        for (String pkg : Prefs.openWith()) {
             for (String[] app : all) {
                 if (app[0].equals(pkg)) {
                     out.add(app);

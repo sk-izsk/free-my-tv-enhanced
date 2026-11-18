@@ -782,19 +782,6 @@ final class Prefs {
         put("openWith", String.join(",", pkgs));
     }
 
-    /** [custom] Continue Watching: the apps a card can open in besides its own, in order; the picks' list until changed. */
-    static List<String> openWithWatch() {
-        String v = sp().getString("openWithWatch", null);
-        if (v == null) return openWith();
-        List<String> out = new ArrayList<>();
-        for (String p : v.split(",")) if (!p.trim().isEmpty()) out.add(p.trim());
-        return out;
-    }
-
-    static void setOpenWithWatch(List<String> pkgs) {
-        put("openWithWatch", String.join(",", pkgs));
-    }
-
     /** "For You" is followed by the time, with the weather now below it. */
     static boolean titleClock() {
         return sp().getBoolean("titleClock", true);

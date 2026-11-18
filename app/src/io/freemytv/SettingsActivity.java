@@ -175,8 +175,6 @@ public class SettingsActivity extends Activity {
         private boolean editingTop;
         private boolean editingInputs;   // the editor edits the drawer's inputs instead of the shelf or top buttons
         private boolean editingOpenWith;   // [custom] the editor edits the apps picks open in (OpenWith)
-        private boolean editingWatchWith;  // [custom] ... with editingOpenWith: the apps a Continue Watching card offers instead
-        private int openWithBack = -1;     // [custom] the Home Settings row the editor came from (-1: the Picks screen's row)
         private boolean editingGenres;     // [custom] the editor edits Your taste's genres (Taste)
         private boolean editingShortcuts;  // [custom] the editor edits the drawer's shortcuts (Home Settings > Shortcuts)
         private boolean genreRowsMode;     // [custom] … or, with it, the genre rows under the shelf (GenreRows, at most 3)
@@ -972,9 +970,6 @@ public class SettingsActivity extends Activity {
                             } else if (screen == SHELF_EDIT && editingShortcuts) {   // [custom] back to its row
                                 editingShortcuts = false;
                                 showSettingsRow(shortcutsRow());
-                            } else if (screen == SHELF_EDIT && editingOpenWith && openWithBack >= 0) {   // [custom] back to its Home Settings row
-                                editingOpenWith = false;
-                                showSettingsRow(openWithBack);
                             } else if (screen == SHELF_EDIT && (editingOpenWith || editingGenres)) {   // [custom] back to its row
                                 focus = cardFocusRow() + (editingGenres ? (genreRowsMode ? 6 : 5) : 2);
                                 editingOpenWith = editingGenres = false;
@@ -1059,8 +1054,6 @@ public class SettingsActivity extends Activity {
             l.add("Ethereum");
             l.add("Solana");
             if (dollar()) l.add(Ui.tr("Dollar"));
-            l.add(Ui.tr("Open picks with"));                // [custom] openPicksRow(): the apps a pick opens in (also under Picks)
-            l.add(Ui.tr("Continue Watching opens with"));   // [custom] watchWithRow(): the apps a Continue Watching card offers
             l.add(Ui.tr("Shortcuts"));          // [custom] shortcutsRow()
             l.add(Ui.tr("TV Status button"));   // [custom] statusKeyRow()
             l.add(Ui.tr("TMDB key"));
@@ -1085,15 +1078,6 @@ public class SettingsActivity extends Activity {
         // [custom] Two rows of the owner's before the keys (ENHANCED.md): the drawer's shortcuts, TV Status's button.
         private int shortcutsRow() {
             return keyRow() - 2;
-        }
-
-        // [custom] The two rows before Shortcuts: Open picks with, Continue Watching opens with (the same editor, OpenWith).
-        private int watchWithRow() {
-            return shortcutsRow() - 1;
-        }
-
-        private int openPicksRow() {
-            return shortcutsRow() - 2;
         }
 
         private int statusKeyRow() {
@@ -1198,24 +1182,15 @@ public class SettingsActivity extends Activity {
             return apps.size() == 1 ? apps.get(0)[1] : Ui.trf("{n} apps", "n", apps.size());
         }
 
-        private String watchWithValue() {   // [custom]
-            List<String[]> apps = OpenWith.chosenWatch(getContext());
-            if (apps.isEmpty()) return Ui.tr("services|None");
-            return apps.size() == 1 ? apps.get(0)[1] : Ui.trf("{n} apps", "n", apps.size());
-        }
-
-        /** [custom] `watch`: the Continue Watching list instead of the picks'; `backRow`: the Home Settings row to return to, or -1. */
-        private void openOpenWithEditor(boolean watch, int backRow) {
+        private void openOpenWithEditor() {
             editingTop = false;
             editingInputs = false;
             editingGenres = false;
             editingShortcuts = false;
             editingOpenWith = true;
-            editingWatchWith = watch;
-            openWithBack = backRow;
             List<String[]> candidates = OpenWith.candidates(getContext());
             shelfOrder.clear();
-            for (String pkg : watch ? Prefs.openWithWatch() : Prefs.openWith()) {
+            for (String pkg : Prefs.openWith()) {
                 for (String[] app : candidates) if (app[0].equals(pkg) && !shelfOrder.contains(pkg)) shelfOrder.add(pkg);
             }
             rebuildShelfRows(candidates);
@@ -1295,9 +1270,7 @@ public class SettingsActivity extends Activity {
             if (HOME_ROW >= 0) v[HOME_ROW] = onOff(HomeAssistant.on(getContext()));
             v[QUOTES_ROW] = onOff(Prefs.quotes());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
-            for (int i = COIN_ROWS; i < v.length - 7; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));   // [custom] 7: our four rows
-            v[v.length - 7] = openWithValue();    // [custom] Open picks with
-            v[v.length - 6] = watchWithValue();   // [custom] Continue Watching opens with
+            for (int i = COIN_ROWS; i < v.length - 5; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));   // [custom] 5: our two rows
             v[v.length - 5] = shortcutsValue();   // [custom]
             v[v.length - 4] = statusKeyValue();   // [custom]
             v[v.length - 3] = keyValue(Recs.key());
@@ -1371,7 +1344,7 @@ public class SettingsActivity extends Activity {
                 whyScroll = pickScroll;
                 for (int r = 0; r < n; r++) {
                     String need = need(r);
-                    whyRows[r] = screen == HOME_SETTINGS && pickScroll + r >= COIN_ROWS && pickScroll + r < openPicksRow() && !Prefs.quotes()
+                    whyRows[r] = screen == HOME_SETTINGS && pickScroll + r >= COIN_ROWS && pickScroll + r < shortcutsRow() && !Prefs.quotes()
                             ? Ui.tr("Turn on the Quotes widget to pick its coins.")
                             : need == null ? null : Capabilities.missing(getContext(), need);
                 }
@@ -1726,7 +1699,7 @@ public class SettingsActivity extends Activity {
                         HomeMode.ensureRemoteService(getContext(), 3_000);
                         return;
                     }
-                    if (row == shortcutsRow() || row == openPicksRow() || row == watchWithRow()) return;   // [custom] their own lists (OK)
+                    if (row == shortcutsRow()) return;   // [custom] its own list (OK)
                     if (row >= keyRow() || !Prefs.quotes()) return;   // the keys and Updates act on OK only
                     Prefs.setCoin(row - COIN_ROWS, !Prefs.coin(row - COIN_ROWS));
                     break;
@@ -2436,7 +2409,6 @@ public class SettingsActivity extends Activity {
             if (editingTop) Prefs.setTopButtons(shelfOrder);
             else if (editingInputs) saveInputsOrder();
             else if (editingShortcuts) saveShortcuts();   // [custom]
-            else if (editingOpenWith && editingWatchWith) Prefs.setOpenWithWatch(shelfOrder);   // [custom]
             else if (editingOpenWith) Prefs.setOpenWith(shelfOrder);   // [custom]
             else if (editingGenres && genreRowsMode) Prefs.setGenreRows(shelfOrder);   // [custom]
             else if (editingGenres) Prefs.setTasteGenres(shelfOrder);   // [custom]
@@ -2498,7 +2470,7 @@ public class SettingsActivity extends Activity {
 
         private void drawShelfEditor(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
-            c.drawText(editingTop ? Ui.tr("Top Buttons") : editingInputs ? Ui.tr("Inputs") : editingShortcuts ? Ui.tr("Shortcuts") : editingOpenWith ? (editingWatchWith ? Ui.tr("Continue Watching opens with") : Ui.tr("Open picks with"))
+            c.drawText(editingTop ? Ui.tr("Top Buttons") : editingInputs ? Ui.tr("Inputs") : editingShortcuts ? Ui.tr("Shortcuts") : editingOpenWith ? Ui.tr("Open picks with")
                     : editingGenres ? (genreRowsMode ? Ui.tr("Genre rows") : Ui.tr("Your taste")) : Ui.tr("Shelf"),   // [custom] Open picks with, Your taste, Genre rows
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             int rows = rowCount();
@@ -2702,7 +2674,6 @@ public class SettingsActivity extends Activity {
                     : screen == HOME_SETTINGS && (from + focus == keyRow() || from + focus == watchmodeRow()) ? Ui.tr("OK: send it from your phone, or type it.")
                     : screen == HOME_SETTINGS && from + focus == statusKeyRow() ? Ui.tr("Press that button twice quickly: TV Status opens over any app.")   // [custom]
                     : screen == HOME_SETTINGS && from + focus == shortcutsRow() ? Ui.tr("OK picks which shortcuts the drawer shows.")   // [custom]
-                    : screen == HOME_SETTINGS && (from + focus == openPicksRow() || from + focus == watchWithRow()) ? Ui.tr("OK adds or removes an app. ← → change the order.")   // [custom]
                     : screen == HOME_SETTINGS && from + focus == updatesRow() ? (Updates.ready(updates, installed)
                     ? Ui.tr("OK installs it; Android asks first.") : Ui.tr("OK checks for a new version."))
                     : Ui.tr("OK or the arrows change the value.")), LIST_X * k + 30 * k, hy, hint);
@@ -2786,10 +2757,6 @@ public class SettingsActivity extends Activity {
             } else if (screen == HOME_SETTINGS && pickScroll + focus == updatesRow()) {
                 updateNow();
                 return;
-            } else if (screen == HOME_SETTINGS && pickScroll + focus == openPicksRow()) {   // [custom]
-                openOpenWithEditor(false, openPicksRow());
-            } else if (screen == HOME_SETTINGS && pickScroll + focus == watchWithRow()) {   // [custom]
-                openOpenWithEditor(true, watchWithRow());
             } else if (screen == HOME_SETTINGS && pickScroll + focus == shortcutsRow()) {   // [custom]
                 openShortcutsEditor();
             } else if (screen == HOME_SETTINGS && (pickScroll + focus == keyRow() || pickScroll + focus == watchmodeRow())) {
@@ -2805,7 +2772,7 @@ public class SettingsActivity extends Activity {
                 pickScroll = 0;   // this list is short: it draws from row 0
                 focus = 0;
             } else if (screen == PICKS && focus == cardFocusRow() + 2) {   // [custom] Open picks with
-                openOpenWithEditor(false, -1);
+                openOpenWithEditor();
             } else if (screen == PICKS && focus == cardFocusRow() + 5) {   // [custom] Your taste
                 openGenresEditor(false);
             } else if (screen == PICKS && focus == cardFocusRow() + 6) {   // [custom] Genre rows
