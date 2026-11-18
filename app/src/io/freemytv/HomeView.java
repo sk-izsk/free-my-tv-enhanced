@@ -230,7 +230,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int watchIndex;
     private boolean watchAllowed = true;
     private boolean watchLoaded;   // read at least once: before that, no "nothing half-watched"
-    private String[] watchTitles, watchMetas;
+    private String[] watchTitles, watchMetas, watchLeft, watchEp;   // [custom] the last two: the card's badges
     private float watchTextsK;
     private int watchTextsGen = -1;
     private LinearGradient watchSheen, watchRim;   // focus sheen and rim, made once per card size (not per frame)
@@ -4977,10 +4977,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int n = watching.size();
         watchTitles = new String[n];
         watchMetas = new String[n];
-        TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta);
+        watchLeft = new String[n];
+        watchEp = new String[n];
+        TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta), bp = new TextPaint(lBadge == null ? lCardMeta : lBadge);
         float width = WatchArt.W * k;
         for (int i = 0; i < n; i++) {
             WatchNext.Item it = watching.get(i);
+            watchLeft[i] = timeLeft(it);   // [custom] "23 min left" top left, the episode top right (cut to fit once)
+            watchEp[i] = it.episode == null || it.episode.isEmpty() ? null
+                    : TextUtils.ellipsize(it.episode, bp, width * 0.42f, TextUtils.TruncateAt.END).toString();
             watchTitles[i] = TextUtils.ellipsize(it.title, tp, width, TextUtils.TruncateAt.END).toString();
             StringBuilder meta = new StringBuilder(it.app == null ? "" : it.app);
             if (it.episode != null) meta.append(meta.length() > 0 ? " · " : "").append(it.episode);
@@ -5104,6 +5109,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setAlpha(255);
             c.restore();
         }
+        drawBadge(c, cell, watchLeft[i], false, false);   // [custom]
+        drawBadge(c, cell, watchEp[i], true, false);
         c.drawText(watchTitles[i], textLeft, textTop + 46 * k, lCardTitle);
         if (!watchMetas[i].isEmpty()) c.drawText(watchMetas[i], textLeft, textTop + 80 * k, lCardMeta);
     }
