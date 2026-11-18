@@ -5,7 +5,7 @@ for Google TV and Android TV, by iZsk. Everything the original does still works 
 `io.freemytv`, so it installs over a Free My TV build signed with the same key. Only the Google TV / Android TV app
 has the additions (the LG and Samsung web app is the original's).
 
-**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.2 · based
+**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.3 · based
 on Free My TV*.
 
 ## What's new compared with Free My TV
@@ -16,8 +16,8 @@ on Free My TV*.
 | **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card for *Love it* / *Not for me* |
 | **Open picks with** | The service's app | Any app that opens `nuvio://tmdb/...` links (Nuvio and its forks). With two or more, OK asks which one. A *Continue Watching* card asks the same way: its own app first, then these apps. With no TMDB match for the title there is no title link: the chooser is headed *Open with (search manually)* and the other apps open at their home, so you search the title there |
 | **Rows under the shelf** | – | *Continue Watching* as its own row, with the picks' badges (length, rating, year) on each card (on top it uses the picks' tall cards); up to three *genre rows* (popular titles of a genre on your services) |
-| **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title |
-| **Screensaver** | A slow zoom and pan; with *Watch from the screensaver* on, OK opens the title in its app | A stronger zoom (28%) on every picture, always zooming in, with the pan corners alternating evenly. With *Watch from the screensaver* on and two or more apps in *Open picks with*, OK on a Nuvio pick asks which app first (the same chooser); Back or Cancel returns to the pictures. Off, nothing changes |
+| **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title, laid out on the time's height: the icon and degrees on the middle line (the Wi-Fi icon's), the condition starting at the top of the digits, the day's high and low on their baseline in the unselected tabs' grey |
+| **Screensaver** | A slow zoom and pan; with *Watch from the screensaver* on, OK opens the title in its app | A stronger zoom (28%) on every picture, always zooming in, with the pan corners alternating evenly; the day's high and low under the weather in the corner (the clock moves down a line to make room). With *Watch from the screensaver* on and two or more apps in *Open picks with*, OK on a Nuvio pick asks which app first (the same chooser); Back or Cancel returns to the pictures. Off, nothing changes |
 | **Hisense wake** | – | The remote-button service is only restarted two minutes after the home screen opens: Hisense's firmware blocks starting a third-party service for about a minute after the TV wakes, and Android then force-stopped the app (the Play Store showed at power-on) |
 | **All Apps** | Open, Move, shelf | Hold OK for a menu: Move, Add to / Remove from shelf, **Add to folder**, **Select several**, App info |
 | **Folders** | – | Apple TV style folders with a 2×2 preview; rename, delete, put a folder on the shelf, move apps between folders |
@@ -119,7 +119,7 @@ English text for the rest (the app already shows English for a missing key).
 |---|---|---|
 | Picks, badges | Home screen, move across the cards | Each card shows length (top left), rating (top right), year (bottom left); a show's span like *2022–25* |
 | Card focus | Move the focus onto a card | It pops up with a deeper shadow: no ring, no outline |
-| Weather | Look at the top line | Icon colored by the conditions; the text in the time's color; the drawer's weather card unchanged |
+| Weather | Look at the top line | Icon colored by the conditions; the text in the time's color; the condition at the top of the time's digits and the day's high and low (*H:12°  L:5°*) on their baseline, in the grey of the unselected tabs; the drawer's weather card unchanged |
 | Open picks with | OK on a pick | A panel: the apps from Picks → Open picks with, then Cancel |
 | Continue Watching row | Down from the shelf, move across | Cards with the same three badges (where TMDB knows the title) |
 | Continue Watching on top | Home Settings → Top of the screen → Continue Watching | Tall cards, the size of the picks' cards, five across, with the poster and the same badges; the row under the shelf is hidden |
@@ -127,9 +127,10 @@ English text for the rest (the app already shows English for a missing key).
 | Folders, Select several | All Apps, hold OK on an app | The menu has *Add to folder* and *Select several*; folders open and rename |
 | TV Status | Drawer → Shortcuts → TV Status | The panel opens; *Free memory* and *Performance mode* work |
 | Home Settings | Open it | Language, Top of the screen, Picks, Continue Watching apps and the rest are all there and change values |
-| Screensaver | Home Settings → Screensaver → Preview | Each picture slowly zooms in and pans; the next one fades in |
+| Screensaver | Home Settings → Screensaver → Preview | Each picture slowly zooms in and pans; the next one fades in; in the corner the date, the weather and under it *H:12°  L:5°* in grey, then the clock |
 | Screensaver chooser | Home Settings → *Watch from the screensaver* On, start the screensaver (*Preview*), press OK | The chooser opens over the picture (the Open picks with apps, then Cancel); Up/Down move, OK opens, Back closes it and the pictures go on. With the setting Off, OK just wakes the TV |
 | Wake from standby (Hisense) | Standby for 4 minutes, then turn on | The home screen is in front. Not the Play Store: `adb logcat -d \| grep "start failure"` must print nothing |
+| Status icons | Home Settings → Status icons On | The Wi-Fi (or Ethernet) icon shows after the time; off, no icon (it is off by default) |
 | Settings survive | Install over the old build | Folders, shelf order and Home Settings are still there |
 
 **3. Performance** (`perf-check.sh`): a feature must not make the home screen slower. It presses the same keys every run

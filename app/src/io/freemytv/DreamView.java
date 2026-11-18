@@ -139,7 +139,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private long minute = -1;
     private String clock = "", date = "";
     private Paint datePaint, clockPaint, weatherPaint, weatherDim, quotePaint, stalePaint;
-    private Paint cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, metaPaint, hintPaint;
+    private Paint cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, metaPaint, hintPaint, cornerRange;
     private TextPaint titlePaint;
 
     private final Runnable tick = new Runnable() {
@@ -261,6 +261,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         cornerDate = Ui.numbers(Ui.semibold, 30 * k, 0xEBFFFFFF);
         cornerQuote = Ui.numbers(Ui.regular, 23 * k, 0xC7FFFFFF);
         cornerStale = Ui.text(Ui.medium, 21 * k, 0x99FFFFFF);
+        cornerRange = Ui.text(Ui.medium, 25 * k, 0xFF8E8E93);   // [custom] the high and low: the home screen's unselected tabs' grey
         cornerClock = Ui.numbers(Ui.displaySemibold, CLOCK_SIZE * k, 0xF2FFFFFF);
         labelPaint = Ui.text(Ui.medium, 25 * k, 0xB8FFFFFF);
         labelPaint.setLetterSpacing(0.1f);
@@ -519,7 +520,13 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         playingBottomWidth = quotePaint.measureText(playingBottom);
         cornerCap = Ui.cap(cornerQuote);
         bottomCap = Ui.cap(quotePaint);
-        cornerBase = (CLOCK_TOP + Ui.cap(cornerClock) / k + QUOTES_GAP) * k;
+        cornerBase = (clockTop() + Ui.cap(cornerClock) / k + QUOTES_GAP) * k;
+    }
+
+    /** [custom] The glass clock's top: lower by a line when the day's high and low show under the weather. */
+    private float clockTop() {
+        HomeData.Weather wx = data.weather;
+        return CLOCK_TOP + (Prefs.weather() && !Double.isNaN(wx.temp) && !Double.isNaN(wx.max) && !Double.isNaN(wx.min) ? 30 : 0);
     }
 
     private void drawBars(Canvas c, float x, float base, float cap, int color, float alpha) {
@@ -596,6 +603,10 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                 x -= sw + 26 * k;
             }
             c.drawText(date, x - cornerDate.measureText(date), DATE_BASE * k, cornerDate);
+            if (clockTop() > CLOCK_TOP) {   // [custom] the day's high and low under the weather, quieter
+                String range = HomeData.highLow(wx, "  ");
+                c.drawText(range, right - cornerRange.measureText(range), (DATE_BASE + 33) * k, cornerRange);
+            }
 
             Glass g = glass;
             if (g != null && glassShader != null) {
@@ -605,11 +616,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             } else {
                 Rect ink = new Rect();
                 cornerClock.getTextBounds(clock, 0, clock.length(), ink);
-                c.drawText(clock, right - ink.right, CLOCK_TOP * k - ink.top, cornerClock);
+                c.drawText(clock, right - ink.right, clockTop() * k - ink.top, cornerClock);
             }
 
             // Compact prices under the clock, right-aligned.
-            float base = (CLOCK_TOP + Ui.cap(cornerClock) / k + QUOTES_GAP) * k;
+            float base = (clockTop() + Ui.cap(cornerClock) / k + QUOTES_GAP) * k;
             float cap = Ui.cap(cornerQuote), gap = 7 * k, spacing = 26 * k;
             int[] coins = HomeData.active();
             int n = playingCorner != null ? 0 : HomeData.coinCount();   // what an app is playing takes their place
@@ -664,7 +675,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         final Paint paint = new Paint(cornerClock);
         paint.clearShadowLayer();
         paint.setColor(0xFFFFFFFF);
-        final float right = RIGHT * k, top = CLOCK_TOP * k, scale = k;
+        final float right = RIGHT * k, top = clockTop() * k, scale = k;
         final int gen = generation;
         worker.execute(() -> {
             Glass g = makeGlass(text, paint, right, top, scale);
