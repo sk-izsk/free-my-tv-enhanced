@@ -230,7 +230,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int watchIndex;
     private boolean watchAllowed = true;
     private boolean watchLoaded;   // read at least once: before that, no "nothing half-watched"
-    private String[] watchTitles, watchMetas;
+    private String[] watchTitles, watchMetas, watchLeft, watchRight, watchYear;   // [custom] the last three: the card's badges
     private float watchTextsK;
     private int watchTextsGen = -1;
     private LinearGradient watchSheen, watchRim;   // focus sheen and rim, made once per card size (not per frame)
@@ -4938,6 +4938,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         topMode = mode;
         if (modeChanged) closeMenu(false);
         watching = list;
+        if (!list.isEmpty() && Recs.hasKey(getContext())) {   // [custom] the badges (a lookup per new title, off this thread)
+            WatchInfo.load(getContext(), list, () -> post(() -> {
+                watchTitles = null;
+                heroDirty = true;
+                heroLayer.invalidate();
+                wake();
+            }));
+        }
         fixRows();   // [custom] the Continue Watching row came or went
         watchTitles = null;
         watchIndex = Math.min(watchIndex, Math.max(0, list.size() - 1));
@@ -4977,10 +4985,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int n = watching.size();
         watchTitles = new String[n];
         watchMetas = new String[n];
+        watchLeft = new String[n];
+        watchRight = new String[n];
+        watchYear = new String[n];
         TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta);
         float width = WatchArt.W * k;
         for (int i = 0; i < n; i++) {
             WatchNext.Item it = watching.get(i);
+            // [custom] The picks' badges (length top left, rating top right, year bottom left) from TMDB (WatchInfo);
+            // a badge only where the data is known.
+            String[] info = WatchInfo.get(it);
+            String len = info == null || info[1] == null || info[1].isEmpty() ? null : info[1];
+            String rate = info == null || info[0] == null || info[0].isEmpty() ? null : info[0];
+            watchYear[i] = info == null || info[2] == null || info[2].isEmpty() ? null : info[2];
+            watchLeft[i] = len;
+            watchRight[i] = rate;
             watchTitles[i] = TextUtils.ellipsize(it.title, tp, width, TextUtils.TruncateAt.END).toString();
             StringBuilder meta = new StringBuilder(it.app == null ? "" : it.app);
             if (it.episode != null) meta.append(meta.length() > 0 ? " · " : "").append(it.episode);
@@ -5104,6 +5123,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setAlpha(255);
             c.restore();
         }
+        drawBadge(c, cell, watchLeft[i], false, false, 0);   // [custom]
+        drawBadge(c, cell, watchRight[i], true, false, 0);
+        drawBadge(c, cell, watchYear[i], false, true, progress >= 0 ? 16 * k * s : 0);   // above the progress bar
         c.drawText(watchTitles[i], textLeft, textTop + 46 * k, lCardTitle);
         if (!watchMetas[i].isEmpty()) c.drawText(watchMetas[i], textLeft, textTop + 80 * k, lCardMeta);
     }
@@ -5347,6 +5369,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (x > w || x + G_CARD_W * k < 0) continue;
             cell.set(x, y, x + G_CARD_W * k, y + G_CARD_H * k);
             Recs.Pick p = items.get(i);
+            float pop = Ui.clamp(genreFocus[r][i].value);   // [custom] the focused card pops up, no ring
+            if (pop > 0.01f) {
+                tmp.set(cell);
+                tmp.offset(0, (8 + 10 * pop) * k);
+                shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.14f, 0.32f) + tone(0.2f, 0.28f) * pop));
+                shadows.draw(c, tmp, radius, DEEP_BLUR * k, shadowDeep);
+                float g = 0.035f * pop;
+                cell.inset(-G_CARD_W * k * g, -G_CARD_H * k * g);
+                cell.offset(0, -10 * k * pop);
+            }
             Bitmap img = genreRows.image(p);
             if (img != null) {
                 roundImage(c, img, genreRows.shader(img), cell, radius);
@@ -5356,7 +5388,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawRoundRect(cell, radius, radius, fill);
             }
             float f = Ui.clamp(genreFocus[r][i].value);
-            if (f > 0.01f) drawCardRing(c, cell, radius, f);
             drawBadges(c, cell, p);
             fitPaint.set(lCardMeta);
             int a = lCardMeta.getAlpha();
@@ -5857,8 +5888,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float size = 34 * k, cy = L_BUTTON_CY * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
         float sw = Symbols.width(getContext(), symbol, size);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, cy, size, lWeather.getColor());
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, cy, size, Symbols.weatherColor(wx.code, wx.isDay));
+        int was = lWeather.getColor();
+        lWeather.setColor(tone(L_INK, WHITE));   // [custom] the text in the time's color
         c.drawText(titleWeather, x + sw + 12 * k, cy + Ui.halfCap(lWeather), lWeather);
+        lWeather.setColor(was);
     }
 
     /**
@@ -5892,10 +5926,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** One pill in a corner of the card: top or bottom, left or right. */
     private void drawBadge(Canvas c, RectF card, String text, boolean right, boolean bottom) {
+        drawBadge(c, card, text, right, bottom, 0);
+    }
+
+    /** `raise`: a bottom pill sits this much higher (above the Continue Watching progress bar). */
+    private void drawBadge(Canvas c, RectF card, String text, boolean right, boolean bottom, float raise) {
         if (text == null || lBadge == null) return;
         float pad = 11 * k, bh = 34 * k, inset = 12 * k, tw = lBadge.measureText(text);
         float left = right ? card.right - inset - tw - 2 * pad : card.left + inset;
-        float top = bottom ? card.bottom - inset - bh : card.top + inset;
+        float top = bottom ? card.bottom - inset - bh - raise : card.top + inset;
         badge.set(left, top, left + tw + 2 * pad, top + bh);
         fill.setShader(null);
         fill.setColor(0x99101012);
@@ -5938,7 +5977,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float size = 40 * k, base = L_WEATHER_BASE * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
         float sw = Symbols.width(getContext(), symbol, size);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(lWeather), size, lWeather.getColor());
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(lWeather), size, Symbols.weatherColor(wx.code, wx.isDay));   // [custom]
         c.drawText(weatherLine, x + sw + 16 * k, base, lWeather);
     }
 
@@ -5951,9 +5990,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         RectF base = cardRects[i];
         if (base.right < 0 || base.left > getWidth()) return;   // slid off screen
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
-        float v = cardFocus[i].value, f = Ui.clamp(v), s = cardHighlight ? 1 : 1 + 0.05f * v;   // [custom] no growth
+        float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + (cardHighlight ? 0.07f : 0.05f) * v;   // [custom] highlighted: pops up like a shelf tile, no ring
         float bw = base.width(), bh = base.height(), r0 = 18 * k;
-        float cx = base.centerX(), cy = base.centerY() - (cardHighlight ? 0 : 6 * k * v);
+        float cx = base.centerX(), cy = base.centerY() - (cardHighlight ? 10 : 6) * k * v;
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
         c.save();
@@ -6003,11 +6042,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setShader(lightRims[i]);
             rim.setAlpha(alpha);
             rim.setStrokeWidth(2.5f * k / s);
-            c.drawRoundRect(tmp, r0, r0, rim);
+            if (!cardHighlight) c.drawRoundRect(tmp, r0, r0, rim);   // [custom] no outline when it pops up
             rim.setStrokeWidth(2.5f * k);
             rim.setAlpha(255);
             c.restore();
-            if (cardHighlight) drawCardRing(c, cell, r, f);   // [custom]
         }
         if (p != null) drawBadges(c, cell, p);   // [custom]
         // The cards peeking in at the sides show only their image: their text would start off screen.

@@ -44,9 +44,9 @@ import java.util.concurrent.Executors;
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
     private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_600;
-    private static final float ZOOM = 0.1f;
-    /** Photos 10% larger than the screen (the zoom goes up to 1.1 without upscaling). */
-    private static final int PW = 2112, PH = 1188;
+    private static final float ZOOM = 0.28f;   // [custom] was 0.1: that was too slow to notice (about 9 px/s); now about 2.8 times the motion
+    /** Photos 25% larger than the screen ([custom] was 10%; the zoom goes to 1.28, which upscales only the last 2%). */
+    private static final int PW = 2400, PH = 1350;
     private static final float MARGIN = 80, RIGHT = 1840, TITLE_W = 900, META_BASE = 1008;
     private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 200, QUOTES_GAP = 52;
     private static final double DRIFT_PERIOD_S = 600;
@@ -76,10 +76,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             Frost.filter(shader, BitmapShader.FILTER_MODE_LINEAR);
             this.lightCaption = lightCaption;
             this.lightClock = lightClock;
-            zoomIn = n % 2 == 0;
+            zoomIn = true;   // [custom] every picture starts at normal size and zooms in (was: every second one started zoomed in and pulled back)
             // Toward one of the corners, alternating, without repeating the previous one.
-            panX = (n / 2) % 2 == 0 ? 0.8f : -0.8f;
-            panY = n % 3 == 0 ? -0.6f : 0.6f;
+            // [custom] Left and right alternate with every picture, up and down with every second: all four corners equally often.
+            panX = n % 2 == 0 ? 0.8f : -0.8f;
+            panY = (n / 2) % 2 == 0 ? 0.6f : -0.6f;
         }
     }
 

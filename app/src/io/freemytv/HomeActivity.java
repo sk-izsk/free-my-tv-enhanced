@@ -89,10 +89,19 @@ public class HomeActivity extends Activity {
         HomeApps.open(this, HomeApps.action(HomeApps.LIVE_TV, HomeApps.TOP_LIVE, Ui.tr("Live TV"), "live_tv"), null);
     };
 
+    private final Runnable reviveRemote = () -> {   // [custom]
+        if (resumed) HomeMode.reviveRemoteService(this);
+    };
+
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
-        HomeMode.reviveRemoteService(this);   // [custom] the remote buttons again after a force stop
+        // [custom] The remote buttons again after a force stop, but not at once: Hisense's firmware (BootInterface) refuses
+        // to start a 3rd-party service process for about a minute after the TV wakes, and Android then force-stops the whole
+        // app ("start failure"): the home screen died at every power-on and the Play Store showed. Two minutes in, it's safe.
+        android.view.View decor = getWindow().getDecorView();
+        decor.removeCallbacks(reviveRemote);
+        decor.postDelayed(reviveRemote, 120_000);
         // TCL's Android 11 records the home activity as translucent (occludesParent=false) whatever its theme says:
         // Android then keeps the app just left visible, and home tasks are layered under all others, so that app stays
         // on screen over ours. Opaque again on every resume (setTranslucent is public from Android 11).
@@ -116,6 +125,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onPause() {
         resumed = false;
+        getWindow().getDecorView().removeCallbacks(reviveRemote);   // [custom]
         if (liveWaits) {   // the screen going off, not another screen coming to the front
             PowerManager power = getSystemService(PowerManager.class);
             liveDark = power != null && !power.isInteractive();

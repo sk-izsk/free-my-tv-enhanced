@@ -5,18 +5,18 @@ for Google TV and Android TV, by iZsk. Everything the original does still works 
 `io.freemytv`, so it installs over a Free My TV build signed with the same key. Only the Google TV / Android TV app
 has the additions (the LG and Samsung web app is the original's).
 
-**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.0 · based
+**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.1 · based
 on Free My TV*.
 
 ## What's new compared with Free My TV
 
 | Area | Free My TV | Enhanced adds |
 |---|---|---|
-| **Picks (cards at the top)** | Trending titles on your services | Up to 7 cards per tab; a *Highlight* focus ring (Picks → Card focus); badges on each card: runtime or seasons, TMDB rating, and the year (a show's span, such as *2022–26*) |
+| **Picks (cards at the top)** | Trending titles on your services | Up to 7 cards per tab; a *Highlight* focus (the card pops up, no ring; Picks → Card focus); badges on each card: runtime or seasons, TMDB rating, and the year (a show's span, such as *2022–26*) |
 | **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card for *Love it* / *Not for me* |
 | **Open picks with** | The service's app | Any app that opens `nuvio://tmdb/...` links (Nuvio and its forks). With two or more, OK asks which one |
-| **Rows under the shelf** | – | *Continue Watching* as its own row; up to three *genre rows* (popular titles of a genre on your services) |
-| **Title line** | – | The time and the weather next to the picks' title |
+| **Rows under the shelf** | – | *Continue Watching* as its own row, with the picks' badges (length, rating, year) on each card; up to three *genre rows* (popular titles of a genre on your services) |
+| **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title |
 | **All Apps** | Open, Move, shelf | Hold OK for a menu: Move, Add to / Remove from shelf, **Add to folder**, **Select several**, App info |
 | **Folders** | – | Apple TV style folders with a 2×2 preview; rename, delete, put a folder on the shelf, move apps between folders |
 | **Select several** | – | Tick apps with OK, then put them all in a folder or on the shelf at once (inside a folder: remove or move them) |
