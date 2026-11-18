@@ -44,8 +44,8 @@ import java.util.concurrent.Executors;
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
     private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_600;
-    private static final float ZOOM = 0.1f;
-    /** Photos 10% larger than the screen (the zoom goes up to 1.1 without upscaling). */
+    private static final float ZOOM = 0.16f;   // [custom] was 0.1: 10% over 33 s was hard to see; the last 5% upscales the 10%-larger photo
+    /** Photos 10% larger than the screen (the zoom goes to 1.1 without upscaling; [custom] 1.16 upscales the last 5%). */
     private static final int PW = 2112, PH = 1188;
     private static final float MARGIN = 80, RIGHT = 1840, TITLE_W = 900, META_BASE = 1008;
     private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 200, QUOTES_GAP = 52;
