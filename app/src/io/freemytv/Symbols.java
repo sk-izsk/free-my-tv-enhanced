@@ -124,14 +124,14 @@ final class Symbols {
     /** [custom] The color of a weather symbol: sun yellow, rain blue, cloud grey, snow ice blue (readable on dark and light). */
     static int weatherColor(int code, boolean day) {
         switch (weather(code, day)) {
-            case "sunny": return 0xFFFFB92E;
+            case "sunny": return 0xFFF2B552;   // a warmer, calmer amber: the sun no longer outshines the time
             case "clear_night": return 0xFFB8C4FF;
-            case "partly_cloudy_day": return 0xFFFFCB5C;
+            case "partly_cloudy_day": return 0xFFF0C46E;
             case "partly_cloudy_night": return 0xFFC3CCF5;
-            case "cloud": return 0xFFAAB8C2;
+            case "cloud": return 0xFF9DB7D6;   // a touch of blue, so it doesn't look unpainted next to the white text
             case "foggy": return 0xFF9FB1BD;
             case "snowflake": return 0xFF8FD3FF;
-            case "thunderstorm": return 0xFFFFD43B;
+            case "thunderstorm": return 0xFFF0CB57;
             default: return 0xFF4DA3FF;   // rain
         }
     }

@@ -16,7 +16,7 @@ on Free My TV*.
 | **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card for *Love it* / *Not for me* |
 | **Open picks with** | The service's app | Any app that opens `nuvio://tmdb/...` links (Nuvio and its forks). With two or more, OK asks which one. A *Continue Watching* card asks the same way: its own app first, then these apps. With no TMDB match for the title there is no title link: the chooser is headed *Open with (search manually)* and the other apps open at their home, so you search the title there |
 | **Rows under the shelf** | – | *Continue Watching* as its own row, with the picks' badges (length, rating, year) on each card (on top it uses the picks' tall cards); up to three *genre rows* (popular titles of a genre on your services) |
-| **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title, with the day's high and low under it in the unselected tabs' grey |
+| **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title, laid out on the time's height: the icon and degrees on the middle line (the Wi-Fi icon's), the condition starting at the top of the digits, the day's high and low on their baseline in the unselected tabs' grey |
 | **Screensaver** | A slow zoom and pan; with *Watch from the screensaver* on, OK opens the title in its app | A stronger zoom (28%) on every picture, always zooming in, with the pan corners alternating evenly; the day's high and low under the weather in the corner (the clock moves down a line to make room). With *Watch from the screensaver* on and two or more apps in *Open picks with*, OK on a Nuvio pick asks which app first (the same chooser); Back or Cancel returns to the pictures. Off, nothing changes |
 | **Hisense wake** | – | The remote-button service is only restarted two minutes after the home screen opens: Hisense's firmware blocks starting a third-party service for about a minute after the TV wakes, and Android then force-stopped the app (the Play Store showed at power-on) |
 | **All Apps** | Open, Move, shelf | Hold OK for a menu: Move, Add to / Remove from shelf, **Add to folder**, **Select several**, App info |
@@ -119,7 +119,7 @@ English text for the rest (the app already shows English for a missing key).
 |---|---|---|
 | Picks, badges | Home screen, move across the cards | Each card shows length (top left), rating (top right), year (bottom left); a show's span like *2022–25* |
 | Card focus | Move the focus onto a card | It pops up with a deeper shadow: no ring, no outline |
-| Weather | Look at the top line | Icon colored by the conditions; the text in the time's color; under it the day's high and low (*H:12°  L:5°*) in the grey of the unselected tabs; the drawer's weather card unchanged |
+| Weather | Look at the top line | Icon colored by the conditions; the text in the time's color; the condition at the top of the time's digits and the day's high and low (*H:12°  L:5°*) on their baseline, in the grey of the unselected tabs; the drawer's weather card unchanged |
 | Open picks with | OK on a pick | A panel: the apps from Picks → Open picks with, then Cancel |
 | Continue Watching row | Down from the shelf, move across | Cards with the same three badges (where TMDB knows the title) |
 | Continue Watching on top | Home Settings → Top of the screen → Continue Watching | Tall cards, the size of the picks' cards, five across, with the poster and the same badges; the row under the shelf is hidden |
