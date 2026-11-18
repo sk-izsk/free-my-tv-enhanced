@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"S=/private/tmp/claude-501/-Users-izsk--claude-spares-spare-yeYkX8/fe7079e7-8083-40ba-bc88-7559aa9604fd/scratchpad; D=192.168.2.40:5555; k(){ adb -s $D shell input keyevent $1; sleep 0.6; }...",
-  "error": "Exit code 1\n(eval):1: defining function based on alias `k'\n(eval):1: parse error near `()'",
-  "timestamp": "2026-11-18T16:17:19.681Z",
-  "retry_count": 1
-}
