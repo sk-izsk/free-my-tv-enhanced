@@ -45,10 +45,15 @@ final class Taste {
         return "taste".equals(Prefs.picksSource());
     }
 
-    /** Changes when the taste does: Recs fetches the list again (its source stamp). "Not for me" counts in both modes. */
+    /**
+     * Changes when the taste does: Recs fetches the list again (its source stamp). "Not for me" counts in both modes.
+     * [custom] The loved titles do not: "Love it" keeps the card where it is, and the next natural refresh (every 6 hours,
+     * or when the time of day changes) makes the "Because you loved …" picks from them. Fetching at once would drop the
+     * loved title itself from the list.
+     */
     static long stamp() {
         long no = Prefs.tasteNo().hashCode();
         if (!on()) return no;
-        return ((Prefs.tasteGenres().hashCode() * 31L + Prefs.tasteLoved().hashCode()) * 31L + no) * 31L + VERSION;
+        return ((Prefs.tasteGenres().hashCode() * 31L) * 31L + no) * 31L + VERSION;
     }
 }
