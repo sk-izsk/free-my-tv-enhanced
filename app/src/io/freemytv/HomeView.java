@@ -2366,7 +2366,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         String symbol = Symbols.weather(wx.code, wx.isDay);
         float sw = Symbols.width(getContext(), symbol, 52 * k);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, r.top + 132 * k, 52 * k, drawerInk(0.95f));
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, r.top + 132 * k, 52 * k, Symbols.weatherColor(wx.code, wx.isDay));   // [custom]
         c.drawText(nowTemp, x + sw + 18 * k - Ui.leftBearing(bigTemp, nowTemp), r.top + 170 * k, bigTemp);
         c.drawText(HomeData.condition(wx.code, wx.isDay), x, r.top + 220 * k, cardText);
         c.drawText(highLow, x, r.top + 258 * k, cardDim);
@@ -5347,6 +5347,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (x > w || x + G_CARD_W * k < 0) continue;
             cell.set(x, y, x + G_CARD_W * k, y + G_CARD_H * k);
             Recs.Pick p = items.get(i);
+            float pop = Ui.clamp(genreFocus[r][i].value);   // [custom] the focused card pops up, no ring
+            if (pop > 0.01f) {
+                tmp.set(cell);
+                tmp.offset(0, (8 + 10 * pop) * k);
+                shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.14f, 0.32f) + tone(0.2f, 0.28f) * pop));
+                shadows.draw(c, tmp, radius, DEEP_BLUR * k, shadowDeep);
+                float g = 0.035f * pop;
+                cell.inset(-G_CARD_W * k * g, -G_CARD_H * k * g);
+                cell.offset(0, -10 * k * pop);
+            }
             Bitmap img = genreRows.image(p);
             if (img != null) {
                 roundImage(c, img, genreRows.shader(img), cell, radius);
@@ -5356,7 +5366,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawRoundRect(cell, radius, radius, fill);
             }
             float f = Ui.clamp(genreFocus[r][i].value);
-            if (f > 0.01f) drawCardRing(c, cell, radius, f);
             drawBadges(c, cell, p);
             fitPaint.set(lCardMeta);
             int a = lCardMeta.getAlpha();
@@ -5857,8 +5866,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float size = 34 * k, cy = L_BUTTON_CY * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
         float sw = Symbols.width(getContext(), symbol, size);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, cy, size, lWeather.getColor());
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, cy, size, Symbols.weatherColor(wx.code, wx.isDay));
+        int was = lWeather.getColor();
+        lWeather.setColor(tone(L_INK, WHITE));   // [custom] the text in the time's color
         c.drawText(titleWeather, x + sw + 12 * k, cy + Ui.halfCap(lWeather), lWeather);
+        lWeather.setColor(was);
     }
 
     /**
@@ -5938,7 +5950,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float size = 40 * k, base = L_WEATHER_BASE * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
         float sw = Symbols.width(getContext(), symbol, size);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(lWeather), size, lWeather.getColor());
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(lWeather), size, Symbols.weatherColor(wx.code, wx.isDay));   // [custom]
         c.drawText(weatherLine, x + sw + 16 * k, base, lWeather);
     }
 
@@ -5951,9 +5963,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         RectF base = cardRects[i];
         if (base.right < 0 || base.left > getWidth()) return;   // slid off screen
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
-        float v = cardFocus[i].value, f = Ui.clamp(v), s = cardHighlight ? 1 : 1 + 0.05f * v;   // [custom] no growth
+        float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + (cardHighlight ? 0.07f : 0.05f) * v;   // [custom] highlighted: pops up like a shelf tile, no ring
         float bw = base.width(), bh = base.height(), r0 = 18 * k;
-        float cx = base.centerX(), cy = base.centerY() - (cardHighlight ? 0 : 6 * k * v);
+        float cx = base.centerX(), cy = base.centerY() - (cardHighlight ? 10 : 6) * k * v;
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
         c.save();
@@ -6007,7 +6019,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setStrokeWidth(2.5f * k);
             rim.setAlpha(255);
             c.restore();
-            if (cardHighlight) drawCardRing(c, cell, r, f);   // [custom]
         }
         if (p != null) drawBadges(c, cell, p);   // [custom]
         // The cards peeking in at the sides show only their image: their text would start off screen.
