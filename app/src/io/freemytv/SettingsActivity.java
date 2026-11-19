@@ -189,6 +189,7 @@ public class SettingsActivity extends Activity {
         private boolean editingGenres;     // [custom] the editor edits Your taste's genres (Taste)
         private boolean editingShortcuts;  // [custom] the editor edits the drawer's shortcuts (Home Settings > Shortcuts)
         private boolean genreRowsMode;     // [custom] … or, with it, the genre rows under the shelf (GenreRows, at most 3)
+        private static final String INDIA_ROW = "#india";   // [custom] Your taste / Genre rows: mix in titles popular in India (On/Off)
         private static final String FORGET_ROW = "#forget";   // [custom] Your taste: forget the loved and Not for me titles
         /** The shelf editor's first row: the order set here or the last one opened first (Prefs.shelfRecent). */
         private static final String ORDER_ROW = "#order";
@@ -1167,6 +1168,11 @@ public class SettingsActivity extends Activity {
             return String.join(", ", names);
         }
 
+        /** [custom] The editor's first row: Indian titles (Recs.indiaTitles) in the top picks (Your taste) or in the genre rows. */
+        private String indiaLabel() {
+            return genreRowsMode ? Ui.tr("India in genre rows") : Ui.tr("India picks");
+        }
+
         /** Your taste's genres, or (forRows) the genre rows under the shelf: the same list of genres. */
         private void openGenresEditor(boolean forRows) {
             editingTop = false;
@@ -1179,6 +1185,7 @@ public class SettingsActivity extends Activity {
             shelfOrder.addAll(forRows ? GenreRows.chosen() : Prefs.tasteGenres());
             List<String[]> rows = new ArrayList<>();
             int rated = Prefs.tasteLoved().size() + Prefs.tasteNo().size();
+            rows.add(new String[] {INDIA_ROW, indiaLabel()});   // [custom]
             if (rated > 0 && !forRows) rows.add(new String[] {FORGET_ROW, Ui.trf("Forget {n} rated titles", "n", rated)});
             for (String[] g : Taste.GENRES) rows.add(new String[] {g[0], Ui.tr(g[0])});
             rebuildShelfRows(rows);
@@ -2375,12 +2382,13 @@ public class SettingsActivity extends Activity {
             }
             if (editingGenres) {   // [custom] forgetting the rated titles first, then the chosen genres (in order), then the rest
                 shelfRows.clear();
+                for (String[] cand : candidates) if (cand[0].equals(INDIA_ROW)) shelfRows.add(cand);   // [custom]
                 for (String[] cand : candidates) if (cand[0].equals(FORGET_ROW)) shelfRows.add(cand);
                 for (String g : shelfOrder) {
                     for (String[] cand : candidates) if (cand[0].equals(g)) { shelfRows.add(cand); break; }
                 }
                 for (String[] cand : candidates) {
-                    if (!cand[0].equals(FORGET_ROW) && !shelfOrder.contains(cand[0])) shelfRows.add(cand);
+                    if (!cand[0].equals(FORGET_ROW) && !cand[0].equals(INDIA_ROW) && !shelfOrder.contains(cand[0])) shelfRows.add(cand);
                 }
                 return;
             }
@@ -2446,6 +2454,12 @@ public class SettingsActivity extends Activity {
                 switchShelfOrder();
                 return;
             }
+            if (pkg.equals(INDIA_ROW)) {   // [custom] On/Off, at once; the picks come with the next refresh
+                if (genreRowsMode) Prefs.setIndiaGenreRows(!Prefs.indiaGenreRows());
+                else Prefs.setIndiaPicks(!Prefs.indiaPicks());
+                shelfRows.set(pickScroll + focus, new String[] {INDIA_ROW, indiaLabel()});
+                return;
+            }
             if (pkg.equals(FORGET_ROW)) {   // [custom] Your taste: forget the rated titles, and the row goes
                 Prefs.forgetTaste();
                 shelfRows.remove(pickScroll + focus);
@@ -2492,12 +2506,12 @@ public class SettingsActivity extends Activity {
                 float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
                 float f = drawRowBackground(c, i);
-                if (app[0].equals(ORDER_ROW)) {
+                if (app[0].equals(ORDER_ROW) || app[0].equals(INDIA_ROW)) {
                     rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
                     rowValue.setColor(blend(0xB3FFFFFF, 0xB31C1C1E, f));
                     float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                     c.drawText(app[1], rowRect.left + 30 * k, base, rowLabel);
-                    c.drawText(shelfOrderValue(), rowRect.right - 30 * k, base, rowValue);
+                    c.drawText(app[0].equals(INDIA_ROW) ? onOff(genreRowsMode ? Prefs.indiaGenreRows() : Prefs.indiaPicks()) : shelfOrderValue(), rowRect.right - 30 * k, base, rowValue);
                     continue;
                 }
                 boolean off = unavailable(i) != null;

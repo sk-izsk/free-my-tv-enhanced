@@ -22,6 +22,7 @@ uninstalled, and one button brings the factory home screen back.
   Reboot TV and a Performance mode switch. It opens over any app with **two quick presses of a remote button you
   choose**.
 - **Your taste:** suggestions from the genres and titles you like (*Love it* / *Not for me*)
+- **India picks:** optionally about one card in five of the top picks and of each genre row is an Indian-made title in your genres, popular on India's services (two switches in Picks, off by default)
 - **Badges on every card:** runtime or seasons, rating, the year (a show's span, like *2022–26*), the genre and the streaming app's own icon; a long *Because you loved …* title scrolls
 - **Continue Watching and genre rows** under the shelf, with the same badges; OK on a Continue Watching card asks
   which app to open it in (its own, or your Nuvio apps)

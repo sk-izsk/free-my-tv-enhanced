@@ -859,6 +859,16 @@ final class Prefs {
     static void setGenreRows(List<String> names) { put("genreRows", String.join(",", names)); }
 
     /** [custom] Performance mode: no glass, no blurred shadows, no sheen (Ui.lite; the home screen restarts with it). */
+    /** [custom] India picks: about 22% of the top cards are an Indian-service title in the owner's taste (Recs.indiaTitles). */
+    static boolean indiaPicks() { return sp().getBoolean("indiaPicks", false); }
+
+    static void setIndiaPicks(boolean on) { put("indiaPicks", on); }
+
+    /** [custom] The same for the genre rows under the shelf. */
+    static boolean indiaGenreRows() { return sp().getBoolean("indiaGenreRows", false); }
+
+    static void setIndiaGenreRows(boolean on) { put("indiaGenreRows", on); }
+
     static boolean performance() {
         return sp().getBoolean("performance", false);
     }

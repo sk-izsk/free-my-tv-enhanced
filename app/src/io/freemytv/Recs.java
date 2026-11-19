@@ -841,6 +841,22 @@ final class Recs {
                 AppLog.w("taste: " + e.getMessage());
             }
         }
+        List<Pick> indiaList = new ArrayList<>();   // [custom] India picks
+        if (Prefs.indiaPicks()) {
+            try {
+                List<String> g = Taste.on() ? Prefs.tasteGenres() : java.util.Collections.<String>emptyList();
+                Set<String> skip = new HashSet<>(notForMe);
+                skip.addAll(watched);
+                List<Pick> im = indiaTitles("movie", Taste.ids(g, "movie"), indiaCount(Prefs.cards()), skip), is = indiaTitles("tv", Taste.ids(g, "tv"), indiaCount(Prefs.cards()), skip);
+                AppLog.w("india picks: " + im.size() + " movies, " + is.size() + " shows");
+                for (int i = 0; i < im.size() || i < is.size(); i++) {
+                    if (i < im.size()) indiaList.add(im.get(i));
+                    if (i < is.size()) indiaList.add(is.get(i));
+                }
+            } catch (Exception e) {
+                AppLog.w("india picks: " + e.getMessage());
+            }
+        }
         List<Pick> progress = new ArrayList<>(), listMovies = new ArrayList<>(), listShows = new ArrayList<>();
         List<Pick> recMovies = new ArrayList<>(), recShows = new ArrayList<>();
         if (trakt != null) {
@@ -880,6 +896,8 @@ final class Recs {
         int ours = list.size();
         alternate(list, seen, hotMovies, hotShows, ours + POOL);
         alternate(list, seen, newMovies, newShows, ours + POOL);
+        for (Pick x : indiaList) if (!seen.add(key(x))) list.removeIf(y -> y != x && key(y).equals(key(x)));   // [custom] the Indian one stays, its twin goes
+        weave(list, indiaList, Prefs.cards());
         if (list.isEmpty()) throw new IOException("TMDB returned no recommendations");
         picks = list;
         traktStamp = account;
@@ -944,6 +962,86 @@ final class Recs {
     /** [custom] The last list's discover filter (the TV's services, language, region), for the genre rows; null before. */
     private volatile String discoverCommon;
 
+    /** [custom] India picks (ENHANCED.md): Indian-made titles popular on India's services (TMDB's India data), in the owner's genres. */
+    private static final int INDIA_VERSION = 2;
+    private static final float INDIA_SHARE = 0.225f;   // of the cards a tab shows: 1 of 3 to 6 cards (20% of 5), 2 of 7
+
+    /** How many Indian cards a tab of `shown` cards has, of each kind. */
+    static int indiaCount(int shown) {
+        return Math.max(1, Math.round(shown * INDIA_SHARE));
+    }
+
+    /**
+     * Puts the Indian titles into `list`, per kind: the first at the third card of that kind, the next at the sixth. Each
+     * tab (Explore, Movies, Shows) then shows about INDIA_SHARE of its `shown` cards as Indian, whatever the tab.
+     */
+    static void weave(List<Pick> list, List<Pick> india, int shown) {
+        int k = indiaCount(shown);
+        for (String kind : new String[] {"movie", "tv"}) {
+            int placed = 0;
+            for (Pick x : india) {
+                if (!kind.equals(x.kind) || placed >= k) continue;
+                int want = 2 + 3 * placed, seen = 0, at = list.size();
+                for (int i = 0; i < list.size(); i++) {
+                    if (kind.equals(list.get(i).kind) && seen++ == want) {
+                        at = i;
+                        break;
+                    }
+                }
+                list.add(at, x);
+                placed++;
+            }
+        }
+    }
+
+    /**
+     * [custom] Up to `want` titles of `kind` made in India (with_origin_country=IN) that are popular on India's services (watch_region=IN; the genres' TMDB ids,
+     * or any), each with its details and the logo of the Indian service. They open through Open picks with (Nuvio's
+     * link), so with none chosen there are none. At most 8 titles are looked up, one request each.
+     */
+    List<Pick> indiaTitles(String kind, String genreIds, int want, Set<String> skip) throws Exception {
+        List<Pick> out = new ArrayList<>();
+        String nuvio = nuvio();
+        if (nuvio == null || want <= 0) return out;
+        JSONArray found = get("/discover/" + kind + "?vote_count.gte=" + (kind.equals("movie") ? 50 : 30) + "&language=" + lang()
+                + "&watch_region=IN&with_origin_country=IN&with_watch_monetization_types=" + WATCH_TYPES + "&include_adult=false&sort_by=popularity.desc"
+                + (genreIds == null || genreIds.isEmpty() ? "" : "&with_genres=" + URLEncoder.encode(genreIds, "UTF-8"))
+                + (Prefs.hideAnimation() ? "&without_genres=" + ANIMATION : "")).getJSONArray("results");
+        List<Pick> all = new ArrayList<>();
+        for (int i = 0; i < found.length(); i++) add(all, found.getJSONObject(i), kind);
+        int looked = 0;
+        for (Pick p : all) {
+            if (out.size() >= want || looked >= 8) break;
+            if (skip.contains(key(p))) continue;
+            looked++;
+            try {
+                JSONObject d = get("/" + kind + "/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");
+                p.title = title(p, d);
+                p.rating = ratingText(d.optDouble("vote_average", 0));
+                JSONArray genres = d.optJSONArray("genres");
+                if (genres != null && genres.length() > 0) p.genre = genre(genres.getJSONObject(0).optString("name"));
+                String length = kind.equals("movie") ? runtime(d.optInt("runtime")) : seasons(d.optInt("number_of_seasons"));
+                p.length = length != null ? length : kind.equals("tv") ? Ui.tr("Series") : null;
+                String date = d.optString(kind.equals("movie") ? "release_date" : "first_air_date", "");
+                p.year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
+                if (p.year != null && kind.equals("tv")) p.year = yearSpan(p.year, d.optString("last_air_date", ""));
+                p.span = true;
+                p.logo = ownerIcon(d, "IN");
+                p.app = "nuvio";
+                p.pkg = nuvio;
+                p.link = nuvioLink(kind, p.id);
+                p.tag = Ui.tr("Popular in India");
+                p.meta = p.tag;
+                p.mine = LIKED;
+                p.detailed = true;
+                out.add(p);
+            } catch (Exception e) {
+                AppLog.w("india title " + p.id + ": " + e.getMessage());
+            }
+        }
+        return out;
+    }
+
     /**
      * [custom] A genre row (GenreRows): TMDB's most popular titles of the genre (Taste.GENRES name) and kind on the TV's
      * services, without "Not for me" ones, up to `max`. Each opens through Open picks with (its Nuvio link); no details
@@ -1003,6 +1101,15 @@ final class Recs {
             }
             p.detailed = true;
             out.add(p);
+        }
+        if (Prefs.indiaGenreRows()) {   // [custom] about 22% of the row's cards are Indian
+            try {
+                Set<String> skip = new HashSet<>(notForMe);
+                for (Pick x : out) skip.add(key(x));
+                weave(out, indiaTitles(kind, ids, indiaCount(GenreRows.PER_ROW), skip), GenreRows.PER_ROW);
+            } catch (Exception e) {
+                AppLog.w("india genre row: " + e.getMessage());
+            }
         }
         return out;
     }
@@ -1160,9 +1267,13 @@ final class Recs {
     /** [custom] The icon of a title's owner for the cards: the TV's app when it has one switched on, else TMDB's own logo of the
      *  first service carrying it ("tmdb:/abc.jpg"), else null. Subscription first, then free with ads, then free. */
     private String ownerIcon(JSONObject o) {
+        return ownerIcon(o, REGION);
+    }
+
+    private String ownerIcon(JSONObject o, String region) {
         JSONObject wp = o.optJSONObject("watch/providers");
         JSONObject res = wp == null ? null : wp.optJSONObject("results");
-        JSONObject br = res == null ? null : res.optJSONObject(REGION);
+        JSONObject br = res == null ? null : res.optJSONObject(region);
         String mine = null, first = null;   // the logo of one the TV has switched on, else of the first one
         for (String type : new String[] {"flatrate", "ads", "free"}) {
             JSONArray list = br == null ? null : br.optJSONArray(type);
@@ -1367,6 +1478,7 @@ final class Recs {
         String nuvio = nuvio();
         if (nuvio != null) stamp = stamp * 31L + nuvio.hashCode();
         stamp = stamp * 31L + Taste.stamp();   // [custom] a new taste fetches again (0 while it's off: as before)
+        if (Prefs.indiaPicks()) stamp = (stamp * 31L + INDIA_VERSION) * 31L + Prefs.cards();   // INDIA_VERSION: raised when the India lists are made differently   // [custom] off: the same stamp as before
         for (String[] service : SERVICES) stamp = stamp * 31L + (installed(service[2]) ? service[2].hashCode() : 0);
         // Switched on, one found by name counts; off, finding it changes nothing, so nothing is fetched again (a 0 would:
         // it still multiplies the stamp by 31).

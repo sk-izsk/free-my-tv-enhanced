@@ -70,7 +70,7 @@ final class GenreRows {
     /** Fetches the rows if the genres changed or they're older than 3 hours (in the background; the listener says when). */
     void refreshIfStale() {
         List<String> genres = chosen();
-        String key = String.join(",", genres) + "|" + Recs.key().hashCode() + "|" + Prefs.tasteNo().hashCode();
+        String key = String.join(",", genres) + "|" + Recs.key().hashCode() + "|" + Prefs.tasteNo().hashCode() + (Prefs.indiaGenreRows() ? "|india" : "");
         long now = System.currentTimeMillis();
         if (genres.isEmpty() || loading || key.equals(loadedFor) && now - loadedAt < EVERY && now >= loadedAt) return;
         loading = true;

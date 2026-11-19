@@ -5,7 +5,7 @@ for Google TV and Android TV, by iZsk. Everything the original does still works 
 `io.freemytv`, so it installs over a Free My TV build signed with the same key. Only the Google TV / Android TV app
 has the additions (the LG and Samsung web app is the original's).
 
-**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.5 · based
+**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.6 · based
 on Free My TV*.
 
 ## What's new compared with Free My TV
@@ -14,6 +14,7 @@ on Free My TV*.
 |---|---|---|
 | **Picks (cards at the top)** | Trending titles on your services | Up to 7 cards per tab; a *Highlight* focus (the card pops up, no ring; Picks → Card focus); badges on each card: runtime or seasons, TMDB rating, and the year (a show's span, such as *2022–26*); the streaming service's logo under the length, from TMDB's own data on who carries the title (so a Continue Watching card played by Nuvio shows Disney+ or Prime, never Nuvio, and a service you switched off or don't have still shows; the TV's app icon, Nuvio's for a Nuvio card, only when TMDB has no logo) and the genre at the bottom right. Under the focused card, *Because you loved …* is a thumb and the loved title; a title too long for the card scrolls, rests, and scrolls again while the card has focus |
 | **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card (a pick or a genre row's) for *Love it* / *Not for me*. *Love it* keeps the card where it is; the *Because you loved …* picks come with the next refresh (every 6 hours, or when the time of day changes). *Not for me* takes the card off at once |
+| **India picks** | – | Two switches, each the first row of its editor in Home Settings → Picks (off by default): *Your taste* → *India picks* mixes Indian-made titles popular on India's services (TMDB's India data, in the genres you chose; with none, India's most popular) into the top cards, and *Genre rows* → *India in genre rows* does the same inside each genre row. About 22% of the cards a tab shows (1 of 3 to 6 cards, 2 of 7), per kind, from the third card on, tagged *Popular in India* under the focused card, with the logo of the Indian service. They open through *Open picks with* (Nuvio's link), so they need an app chosen there. Up to 8 title requests per kind and refresh |
 | **Open picks with** | The service's app | Any app that opens `nuvio://tmdb/...` links (Nuvio and its forks). With two or more, OK asks which one. A *Continue Watching* card asks the same way: its own app first, then these apps. With no TMDB match for the title there is no title link: the chooser is headed *Open with (search manually)* and the other apps open at their home, so you search the title there |
 | **Rows under the shelf** | – | *Continue Watching* as its own row, with the picks' badges (length, rating, year) and the app's icon on each card (on top it uses the picks' tall cards); up to three *genre rows* (popular titles of a genre on your services) |
 | **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title, laid out on the time's height: the icon and degrees on the middle line (the Wi-Fi icon's), the condition starting at the top of the digits, the day's high and low on their baseline in the unselected tabs' grey |
@@ -121,6 +122,8 @@ English text for the rest (the app already shows English for a missing key).
 | Card focus | Move the focus onto a card | It pops up with a deeper shadow: no ring, no outline |
 | Weather | Look at the top line | Icon colored by the conditions; the text in the time's color; the condition at the top of the time's digits and the day's high and low (*H:12°  L:5°*) on their baseline, in the grey of the unselected tabs; the drawer's weather card unchanged |
 | Love it / Not for me | Hold OK on a pick (Suggestions: Your taste) | *Love it*: a toast, and the card stays in the list. *Not for me*: the card goes at once |
+| India picks | Home Settings → Picks → Your taste → India picks → On; back to the home screen, wait a minute | About one card in five (2 of 7) is Indian-made, tagged *Popular in India* under it, with the Indian service's logo. Off: gone at the next refresh |
+| India in genre rows | Home Settings → Picks → Genre rows → India in genre rows → On | Each genre row has an Indian-made title of that genre, tagged *Popular in India* |
 | Open picks with | OK on a pick | A panel: the apps from Picks → Open picks with, then Cancel |
 | Continue Watching row | Down from the shelf, move across | Cards with the same three badges (where TMDB knows the title) and the app's icon under the length |
 | Continue Watching on top | Home Settings → Top of the screen → Continue Watching | Tall cards, the size of the picks' cards, five across, with the poster and the same badges; the row under the shelf is hidden |
