@@ -5035,7 +5035,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             String rate = info == null || info[0] == null || info[0].isEmpty() ? null : info[0];
             watchYear[i] = info == null || info[2] == null || info[2].isEmpty() ? null : info[2];
             watchLeft[i] = len;
-            watchIcon[i] = players.contains(it.pkg) ? WatchInfo.service(it) : it.pkg;   // [custom] Nuvio only plays: the owner's icon, or none
+            String owner = players.contains(it.pkg) ? WatchInfo.service(it) : null;   // [custom] Nuvio only plays: the owner's logo from TMDB,
+            watchIcon[i] = owner != null ? owner : it.pkg;                              // and the player's own icon when TMDB has none
             watchRight[i] = rate;
             watchTitles[i] = TextUtils.ellipsize(it.title, tp, width, TextUtils.TruncateAt.END).toString();
             StringBuilder meta = new StringBuilder(it.app == null ? "" : it.app);
@@ -6173,9 +6174,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawServiceAndGenre(Canvas c, RectF card, Recs.Pick p, boolean genreBadge) {
-        // a pick going to Nuvio or Stremio has the TV's app in servicePkg; with none known, no icon (never Nuvio's own)
-        boolean via = "nuvio".equals(p.app) || "stremio".equals(p.app);
-        drawServiceIcon(c, card, p.servicePkg != null ? p.servicePkg : via ? null : p.app != null ? p.pkg : null);
+        // TMDB's logo of the service that carries the title; else the TV's app it streams on; else the app that opens it (Nuvio)
+        drawServiceIcon(c, card, p.logo != null ? p.logo : p.servicePkg != null ? p.servicePkg : p.app != null ? p.pkg : null);
         if (!genreBadge) return;   // a genre row is that genre already
         if (p.genre == null || p.genre.isEmpty()) return;
         String g = genreShort.get(p.genre);

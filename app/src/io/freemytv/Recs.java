@@ -58,6 +58,7 @@ final class Recs {
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
         String rating;          // [custom] TMDB's average as "★ 7.6" (the card's badge), or null
+        String logo;            // [custom] the owner's icon on the card: TMDB's logo of the service ("tmdb:/logo.jpg")
         String loved;           // [custom] the loved title this pick comes from ("Because you loved …"): the card shows a thumb and the title
         String genre;           // [custom] the title's first genre ("Horror"): the card's bottom-right badge, or null
         String length, year;    // [custom] badges too: "1h 46m" / "3 seasons" (top left), "2022" (bottom left), or null
@@ -85,7 +86,7 @@ final class Recs {
     /** How often Trakt is asked whether the account changed (marked watched, the watchlist): one small request. */
     private static final long TRAKT_EVERY = 10 * 60_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 9;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span, 8: the genre badge, 9: the loved title
+    private static final int CACHE_VERSION = 10;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span, 8: the genre badge, 9: the loved title, 10: the service's TMDB logo
     /** TMDB's titles in the list (trending, then the new releases), as on main. */
     private static final int POOL = 24;
     /** Trakt's titles in the list: about what the tabs show of them (now(): up to 2 in 5 in progress, 3 in 5 liked). */
@@ -984,14 +985,14 @@ final class Recs {
                 try {
                     JSONObject d = get("/movie/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");   // [custom] the same request brings the providers
                     p.length = runtime(d.optInt("runtime"));
-                    p.servicePkg = installedService(d);
+                    p.logo = ownerIcon(d);
                 } catch (Exception e) {
                     AppLog.w("genre row runtime: " + e.getMessage());
                 }
             } else {   // [custom] a show's seasons and its years ("2022–26"): one small request per show too
                 try {
                     JSONObject d = get("/tv/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");   // [custom]
-                    p.servicePkg = installedService(d);
+                    p.logo = ownerIcon(d);
                     String n = seasons(d.optInt("number_of_seasons"));
                     if (n != null) p.length = n;
                     if (p.year != null) p.year = yearSpan(p.year, d.optString("last_air_date", ""));
@@ -1035,6 +1036,7 @@ final class Recs {
         p.length = k.length;
         p.year = k.year;
         p.genre = k.genre;   // [custom]
+        p.logo = k.logo;
         p.span = k.span;   // [custom]
         p.backdrop = k.backdrop;
         p.poster = k.poster;
@@ -1155,6 +1157,29 @@ final class Recs {
         return null;
     }
 
+    /** [custom] The icon of a title's owner for the cards: the TV's app when it has one switched on, else TMDB's own logo of the
+     *  first service carrying it ("tmdb:/abc.jpg"), else null. Subscription first, then free with ads, then free. */
+    private String ownerIcon(JSONObject o) {
+        JSONObject wp = o.optJSONObject("watch/providers");
+        JSONObject res = wp == null ? null : wp.optJSONObject("results");
+        JSONObject br = res == null ? null : res.optJSONObject(REGION);
+        String mine = null, first = null;   // the logo of one the TV has switched on, else of the first one
+        for (String type : new String[] {"flatrate", "ads", "free"}) {
+            JSONArray list = br == null ? null : br.optJSONArray(type);
+            for (int i = 0; list != null && i < list.length(); i++) {
+                JSONObject pr = list.optJSONObject(i);
+                String logo = pr.optString("logo_path", "");
+                if (logo.isEmpty() || "null".equals(logo) || pr.optString("provider_name").toLowerCase(Locale.ROOT).contains(" channel")) continue;
+                if (first == null) first = "tmdb:" + logo;
+                String[] s = service(pr.optString("provider_name"), pr.optInt("provider_id"));
+                if (mine == null && s != null && installed(s[2])) mine = "tmdb:" + logo;
+            }
+        }
+        if (mine != null) return mine;
+        if (first != null) return first;
+        return installedService(o);   // no logo from TMDB: the TV's own app icon
+    }
+
     /** Genre, runtime (or seasons) and the service it's on, among the ones the TV has. */
     private void fetchDetails(Pick p) throws Exception {
         JSONObject o = get("/" + p.kind + "/" + p.id
@@ -1189,6 +1214,8 @@ final class Recs {
                 if (s != null && installed(s[2])) {
                     p.app = s[1];
                     p.pkg = s[2];
+                    String lg = list.getJSONObject(i).optString("logo_path", "");
+                    if (!lg.isEmpty() && !"null".equals(lg)) p.logo = "tmdb:" + lg;   // [custom] TMDB's logo of this service
                 }
             }
         }
@@ -1456,13 +1483,13 @@ final class Recs {
             String length, service;
             if (tv) {
                 JSONObject d = request("/tv/" + id + "?language=" + lang() + "&append_to_response=watch/providers", key);
-                service = get(c).installedService(d);
+                service = get(c).ownerIcon(d);
                 length = seasons(d.optInt("number_of_seasons"));
                 if (length == null) length = Ui.tr("Series");
                 if (year != null) year = yearSpan(year, d.optString("last_air_date", ""));
             } else {
                 JSONObject d = request("/movie/" + id + "?language=" + lang() + "&append_to_response=watch/providers", key);
-                service = get(c).installedService(d);
+                service = get(c).ownerIcon(d);
                 length = runtime(d.optInt("runtime"));
             }
             // + the kind and TMDB id: a card's Open with links the title in Nuvio (nuvioLink) like a pick's
@@ -1708,7 +1735,7 @@ final class Recs {
                         .put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
                         .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
-                        .put("tag", p.tag == null ? "" : p.tag).put("loved", p.loved == null ? "" : p.loved).put("mine", p.mine).put("detailed", p.detailed)
+                        .put("tag", p.tag == null ? "" : p.tag).put("loved", p.loved == null ? "" : p.loved).put("logo", p.logo == null ? "" : p.logo).put("mine", p.mine).put("detailed", p.detailed)
                         .put("rating", p.rating == null ? "" : p.rating)   // [custom]
                         .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year).put("span", p.span)
                         .put("genre", p.genre == null ? "" : p.genre));   // [custom]
@@ -1744,6 +1771,7 @@ final class Recs {
             p.servicePkg = o.optString("servicePkg").isEmpty() ? null : o.optString("servicePkg");
             p.tag = o.optString("tag").isEmpty() ? null : o.optString("tag");
         p.loved = o.optString("loved").isEmpty() ? null : o.optString("loved");
+        p.logo = o.optString("logo").isEmpty() ? null : o.optString("logo");
             p.mine = o.optInt("mine");
             p.detailed = o.optBoolean("detailed");
             p.rating = o.optString("rating").isEmpty() ? null : o.optString("rating");   // [custom]

@@ -25,7 +25,7 @@ final class WatchInfo {
     private static final String SEP = "\u0001";
 
     private static String key(WatchNext.Item it) {
-        return "v4|" + it.title.toLowerCase(Locale.ROOT) + "|" + (it.episode != null) + "|" + Ui.language;   // v3: with the TMDB id, v4: and the service
+        return "v5|" + it.title.toLowerCase(Locale.ROOT) + "|" + (it.episode != null) + "|" + Ui.language;   // v3: with the TMDB id, v4: and the service, v5: or its TMDB logo
     }
 
     /** {kind ("movie" or "tv"), TMDB id} of the title, or null when it isn't known (no key, no match, not looked up yet). */

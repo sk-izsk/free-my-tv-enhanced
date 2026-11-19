@@ -26,6 +26,7 @@ final class ServiceIcons {
     private static final Map<String, Bitmap> CACHE = new ConcurrentHashMap<>();
     private static final Set<String> ASKED = ConcurrentHashMap.newKeySet();   // loading, loaded or failed: asked once
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
+    private static final ExecutorService NET = Executors.newSingleThreadExecutor();   // TMDB's logos: a slow server never holds the app icons
 
     /** The icon at `px` pixels, or null while it loads (`onLoaded` runs when it is in), or when the app has none. */
     static Bitmap get(Context c, String pkg, int px, Runnable onLoaded) {
@@ -34,9 +35,9 @@ final class ServiceIcons {
         Bitmap b = CACHE.get(key);
         if (b != null || !ASKED.add(key)) return b;
         final Context app = c.getApplicationContext();
-        IO.execute(() -> {
+        (pkg.startsWith("tmdb:") ? NET : IO).execute(() -> {
             try {
-                Drawable d = app.getPackageManager().getApplicationIcon(pkg);
+                Drawable d = pkg.startsWith("tmdb:") ? logo(app, pkg.substring(5)) : app.getPackageManager().getApplicationIcon(pkg);
                 Bitmap square = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
                 d.setBounds(0, 0, px, px);
                 d.draw(new Canvas(square));
@@ -52,5 +53,31 @@ final class ServiceIcons {
             }
         });
         return null;
+    }
+
+    /** A provider's logo from TMDB's image server (w92, a few KB), kept on the TV: one request per logo, ever. */
+    private static Drawable logo(Context c, String path) throws java.io.IOException {
+        java.io.File dir = new java.io.File(c.getCacheDir(), "provider-logos");
+        java.io.File f = new java.io.File(dir, path.replaceAll("[^A-Za-z0-9.]", "_"));
+        if (!f.exists()) {
+            dir.mkdirs();
+            java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL("https://image.tmdb.org/t/p/w92" + path).openConnection();
+            h.setConnectTimeout(8000);
+            h.setReadTimeout(8000);
+            try (java.io.InputStream in = h.getInputStream(); java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                byte[] buf = new byte[4096];
+                int n;
+                long total = 0;
+                while ((n = in.read(buf)) > 0 && (total += n) < 200_000) out.write(buf, 0, n);
+            } finally {
+                h.disconnect();
+            }
+        }
+        Bitmap b = android.graphics.BitmapFactory.decodeFile(f.getPath());
+        if (b == null) {
+            f.delete();
+            throw new java.io.IOException("not an image");
+        }
+        return new android.graphics.drawable.BitmapDrawable(c.getResources(), b);
     }
 }
