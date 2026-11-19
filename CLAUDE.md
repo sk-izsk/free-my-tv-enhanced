@@ -55,6 +55,10 @@ before you do it, and let them do the taps on the TV.
   *What's new* table, a line in its on-TV checklist (*Testing Enhanced after a change or an upstream merge*), a README
   bullet, strings in every language, and a before/after `./perf-check.sh <IP>` on a TV (same keys, same TV, run twice;
   a feature must not make the home screen slower). Run that section after every `git merge upstream/main` too.
+  If the numbers get worse (more janky frames, higher 90th/99th percentile, more memory), find the reason first (a
+  `dumpsys gfxinfo` run with the feature on and off, or the draw code for allocations, work on the UI thread, redrawing
+  layers that didn't change), then give an alternative that keeps the performance intact or better, and measure that
+  too. Never ship the slower version, and never drop the feature without saying why.
 
 ## Installing it for someone
 

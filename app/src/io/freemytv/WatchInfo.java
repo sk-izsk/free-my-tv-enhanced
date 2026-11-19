@@ -25,7 +25,7 @@ final class WatchInfo {
     private static final String SEP = "\u0001";
 
     private static String key(WatchNext.Item it) {
-        return "v3|" + it.title.toLowerCase(Locale.ROOT) + "|" + (it.episode != null) + "|" + Ui.language;   // v3: with the TMDB id
+        return "v5|" + it.title.toLowerCase(Locale.ROOT) + "|" + (it.episode != null) + "|" + Ui.language;   // v3: with the TMDB id, v4: and the service, v5: or its TMDB logo
     }
 
     /** {kind ("movie" or "tv"), TMDB id} of the title, or null when it isn't known (no key, no match, not looked up yet). */
@@ -33,6 +33,12 @@ final class WatchInfo {
         String[] v = get(it);
         if (v == null || v.length < 5 || v[3] == null || v[3].isEmpty() || v[4] == null || v[4].isEmpty()) return null;
         return new String[] {v[3], v[4]};
+    }
+
+    /** The TV's app that carries the title (TMDB's providers, only the ones installed), or null. */
+    static String service(WatchNext.Item it) {
+        String[] v = get(it);
+        return v == null || v.length < 6 || v[5] == null || v[5].isEmpty() ? null : v[5];
     }
 
     /** {rating, length, year} (each may be null), or null when not known (yet). Memory only: safe while drawing. */
@@ -60,7 +66,7 @@ final class WatchInfo {
                     continue;
                 }
                 try {
-                    String[] v = Recs.titleBadges(it.title, it.episode != null);
+                    String[] v = Recs.titleBadges(c, it.title, it.episode != null);
                     if (v == null) {
                         CACHE.put(k, NONE);
                         continue;

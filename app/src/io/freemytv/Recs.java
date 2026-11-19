@@ -58,6 +58,9 @@ final class Recs {
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
         String rating;          // [custom] TMDB's average as "★ 7.6" (the card's badge), or null
+        String logo;            // [custom] the owner's icon on the card: TMDB's logo of the service ("tmdb:/logo.jpg")
+        String loved;           // [custom] the loved title this pick comes from ("Because you loved …"): the card shows a thumb and the title
+        String genre;           // [custom] the title's first genre ("Horror"): the card's bottom-right badge, or null
         String length, year;    // [custom] badges too: "1h 46m" / "3 seasons" (top left), "2022" (bottom left), or null
         boolean span;           // [custom] year made with a show's last year ("2022–26"); saved lists from before lack it
     }
@@ -83,7 +86,7 @@ final class Recs {
     /** How often Trakt is asked whether the account changed (marked watched, the watchlist): one small request. */
     private static final long TRAKT_EVERY = 10 * 60_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 7;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span
+    private static final int CACHE_VERSION = 10;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span, 8: the genre badge, 9: the loved title, 10: the service's TMDB logo
     /** TMDB's titles in the list (trending, then the new releases), as on main. */
     private static final int POOL = 24;
     /** Trakt's titles in the list: about what the tabs show of them (now(): up to 2 in 5 in progress, 3 in 5 liked). */
@@ -909,6 +912,7 @@ final class Recs {
                 String k = key(p);
                 if (notForMe.contains(k) || watched.contains(k) || loved.contains(k)) continue;
                 p.tag = Ui.trf("Because you loved {title}", "title", title);
+                p.loved = title;
                 p.mine = LIKED;   // with Trakt's watchlist: up to 3 in 5 cards, ahead of TMDB's (now())
                 try {
                     if (!reuse(p, known)) fetchDetails(p);
@@ -979,13 +983,16 @@ final class Recs {
             p.length = kind.equals("movie") ? null : Ui.tr("Series");
             if (kind.equals("movie")) {   // the runtime badge: one small request per movie
                 try {
-                    p.length = runtime(get("/movie/" + p.id + "?language=" + lang()).optInt("runtime"));
+                    JSONObject d = get("/movie/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");   // [custom] the same request brings the providers
+                    p.length = runtime(d.optInt("runtime"));
+                    p.logo = ownerIcon(d);
                 } catch (Exception e) {
                     AppLog.w("genre row runtime: " + e.getMessage());
                 }
             } else {   // [custom] a show's seasons and its years ("2022–26"): one small request per show too
                 try {
-                    JSONObject d = get("/tv/" + p.id + "?language=" + lang());
+                    JSONObject d = get("/tv/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");   // [custom]
+                    p.logo = ownerIcon(d);
                     String n = seasons(d.optInt("number_of_seasons"));
                     if (n != null) p.length = n;
                     if (p.year != null) p.year = yearSpan(p.year, d.optString("last_air_date", ""));
@@ -1028,6 +1035,8 @@ final class Recs {
         p.rating = k.rating;   // [custom]
         p.length = k.length;
         p.year = k.year;
+        p.genre = k.genre;   // [custom]
+        p.logo = k.logo;
         p.span = k.span;   // [custom]
         p.backdrop = k.backdrop;
         p.poster = k.poster;
@@ -1133,6 +1142,44 @@ final class Recs {
         return n <= 0 ? null : Ui.plural("plural|one:{n} season|other:{n} seasons", n);
     }
 
+    /** [custom] The package of the first service carrying the title (subscription, then free with ads, then free) that the TV has, or null. */
+    private String installedService(JSONObject o) {
+        JSONObject wp = o.optJSONObject("watch/providers");
+        JSONObject res = wp == null ? null : wp.optJSONObject("results");
+        JSONObject br = res == null ? null : res.optJSONObject(REGION);
+        for (String type : new String[] {"flatrate", "ads", "free"}) {
+            JSONArray list = br == null ? null : br.optJSONArray(type);
+            for (int i = 0; list != null && i < list.length(); i++) {
+                String[] s = service(list.optJSONObject(i).optString("provider_name"), list.optJSONObject(i).optInt("provider_id"));
+                if (s != null && installed(s[2])) return s[2];
+            }
+        }
+        return null;
+    }
+
+    /** [custom] The icon of a title's owner for the cards: the TV's app when it has one switched on, else TMDB's own logo of the
+     *  first service carrying it ("tmdb:/abc.jpg"), else null. Subscription first, then free with ads, then free. */
+    private String ownerIcon(JSONObject o) {
+        JSONObject wp = o.optJSONObject("watch/providers");
+        JSONObject res = wp == null ? null : wp.optJSONObject("results");
+        JSONObject br = res == null ? null : res.optJSONObject(REGION);
+        String mine = null, first = null;   // the logo of one the TV has switched on, else of the first one
+        for (String type : new String[] {"flatrate", "ads", "free"}) {
+            JSONArray list = br == null ? null : br.optJSONArray(type);
+            for (int i = 0; list != null && i < list.length(); i++) {
+                JSONObject pr = list.optJSONObject(i);
+                String logo = pr.optString("logo_path", "");
+                if (logo.isEmpty() || "null".equals(logo) || pr.optString("provider_name").toLowerCase(Locale.ROOT).contains(" channel")) continue;
+                if (first == null) first = "tmdb:" + logo;
+                String[] s = service(pr.optString("provider_name"), pr.optInt("provider_id"));
+                if (mine == null && s != null && installed(s[2])) mine = "tmdb:" + logo;
+            }
+        }
+        if (mine != null) return mine;
+        if (first != null) return first;
+        return installedService(o);   // no logo from TMDB: the TV's own app icon
+    }
+
     /** Genre, runtime (or seasons) and the service it's on, among the ones the TV has. */
     private void fetchDetails(Pick p) throws Exception {
         JSONObject o = get("/" + p.kind + "/" + p.id
@@ -1149,6 +1196,7 @@ final class Recs {
         if (genres != null && genres.length() > 0) {   // [custom] "Series", the length and the year are badges now
             String name = genres.getJSONObject(0).optString("name");
             parts.add(genre(name));
+            p.genre = genre(name);   // [custom] also on its own: the card's bottom-right badge
         }
         String length = p.kind.equals("movie") ? runtime(o.optInt("runtime")) : seasons(o.optInt("number_of_seasons"));
         p.length = length != null ? length : p.kind.equals("tv") ? Ui.tr("Series") : null;   // [custom] badges
@@ -1166,6 +1214,8 @@ final class Recs {
                 if (s != null && installed(s[2])) {
                     p.app = s[1];
                     p.pkg = s[2];
+                    String lg = list.getJSONObject(i).optString("logo_path", "");
+                    if (!lg.isEmpty() && !"null".equals(lg)) p.logo = "tmdb:" + lg;   // [custom] TMDB's logo of this service
                 }
             }
         }
@@ -1282,6 +1332,15 @@ final class Recs {
         for (String[] s : SERVICES) if (s[2].equals(pkg) && Prefs.serviceOff(s[1])) return false;
         for (String[] s : byName) if (s[2].equals(pkg) && Prefs.serviceOff(s[1])) return false;
         return HomeApps.launchIntent(context.getPackageManager(), pkg) != null;
+    }
+
+    /** [custom] Nuvio, its forks and Stremio are players, not owners of what they play: their cards show the service's icon. */
+    static boolean isPlayer(Context c, String pkg) {
+        if (pkg == null) return false;
+        if (pkg.equals(STREMIO)) return true;
+        for (String n : NUVIO) if (n.equals(pkg)) return true;
+        for (String[] a : OpenWith.candidates(c)) if (a[0].equals(pkg)) return true;
+        return false;
     }
 
     private boolean stremio() {
@@ -1402,7 +1461,7 @@ final class Recs {
      * "1h 46m" or "3 seasons", "2022"), or null when nothing matches. A show is looked up first when `show`, else a
      * movie first. Two small requests; WatchInfo caches the answer, so a title is looked up once.
      */
-    static String[] titleBadges(String title, boolean show) throws IOException, org.json.JSONException {
+    static String[] titleBadges(Context c, String title, boolean show) throws IOException, org.json.JSONException {
         String key = key();
         if (key.isEmpty() || title == null || title.trim().isEmpty()) return null;
         for (int pass = 0; pass < 2; pass++) {
@@ -1421,17 +1480,21 @@ final class Recs {
             int id = o.optInt("id");
             String date = o.optString(tv ? "first_air_date" : "release_date", "");
             String year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
-            String length;
+            String length, service;
             if (tv) {
-                JSONObject d = request("/tv/" + id + "?language=" + lang(), key);
+                JSONObject d = request("/tv/" + id + "?language=" + lang() + "&append_to_response=watch/providers", key);
+                service = get(c).ownerIcon(d);
                 length = seasons(d.optInt("number_of_seasons"));
                 if (length == null) length = Ui.tr("Series");
                 if (year != null) year = yearSpan(year, d.optString("last_air_date", ""));
             } else {
-                length = runtime(request("/movie/" + id + "?language=" + lang(), key).optInt("runtime"));
+                JSONObject d = request("/movie/" + id + "?language=" + lang() + "&append_to_response=watch/providers", key);
+                service = get(c).ownerIcon(d);
+                length = runtime(d.optInt("runtime"));
             }
             // + the kind and TMDB id: a card's Open with links the title in Nuvio (nuvioLink) like a pick's
-            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year, tv ? "tv" : "movie", String.valueOf(id)};
+            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year, tv ? "tv" : "movie", String.valueOf(id),
+                    service == null ? "" : service};   // [custom] the TV's app that carries it (Continue Watching's icon when the card is from a player)
         }
         return null;
     }
@@ -1672,9 +1735,10 @@ final class Recs {
                         .put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
                         .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
-                        .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine).put("detailed", p.detailed)
+                        .put("tag", p.tag == null ? "" : p.tag).put("loved", p.loved == null ? "" : p.loved).put("logo", p.logo == null ? "" : p.logo).put("mine", p.mine).put("detailed", p.detailed)
                         .put("rating", p.rating == null ? "" : p.rating)   // [custom]
-                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year).put("span", p.span));
+                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year).put("span", p.span)
+                        .put("genre", p.genre == null ? "" : p.genre));   // [custom]
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("traktActivity", traktActivity).putLong("traktStamp", traktStamp)
@@ -1706,12 +1770,15 @@ final class Recs {
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.servicePkg = o.optString("servicePkg").isEmpty() ? null : o.optString("servicePkg");
             p.tag = o.optString("tag").isEmpty() ? null : o.optString("tag");
+        p.loved = o.optString("loved").isEmpty() ? null : o.optString("loved");
+        p.logo = o.optString("logo").isEmpty() ? null : o.optString("logo");
             p.mine = o.optInt("mine");
             p.detailed = o.optBoolean("detailed");
             p.rating = o.optString("rating").isEmpty() ? null : o.optString("rating");   // [custom]
             p.length = o.optString("length").isEmpty() ? null : o.optString("length");
             p.year = o.optString("year").isEmpty() ? null : o.optString("year");
             p.span = o.optBoolean("span");   // [custom]
+            p.genre = o.optString("genre").isEmpty() ? null : o.optString("genre");   // [custom]
             out.add(p);
         }
         return out;
