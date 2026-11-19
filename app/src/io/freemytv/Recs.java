@@ -982,13 +982,16 @@ final class Recs {
             p.length = kind.equals("movie") ? null : Ui.tr("Series");
             if (kind.equals("movie")) {   // the runtime badge: one small request per movie
                 try {
-                    p.length = runtime(get("/movie/" + p.id + "?language=" + lang()).optInt("runtime"));
+                    JSONObject d = get("/movie/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");   // [custom] the same request brings the providers
+                    p.length = runtime(d.optInt("runtime"));
+                    p.servicePkg = installedService(d);
                 } catch (Exception e) {
                     AppLog.w("genre row runtime: " + e.getMessage());
                 }
             } else {   // [custom] a show's seasons and its years ("2022–26"): one small request per show too
                 try {
-                    JSONObject d = get("/tv/" + p.id + "?language=" + lang());
+                    JSONObject d = get("/tv/" + p.id + "?language=" + lang() + "&append_to_response=watch/providers");   // [custom]
+                    p.servicePkg = installedService(d);
                     String n = seasons(d.optInt("number_of_seasons"));
                     if (n != null) p.length = n;
                     if (p.year != null) p.year = yearSpan(p.year, d.optString("last_air_date", ""));
@@ -1135,6 +1138,21 @@ final class Recs {
 
     private static String seasons(int n) {
         return n <= 0 ? null : Ui.plural("plural|one:{n} season|other:{n} seasons", n);
+    }
+
+    /** [custom] The package of the first service carrying the title (subscription, then free with ads, then free) that the TV has, or null. */
+    private String installedService(JSONObject o) {
+        JSONObject wp = o.optJSONObject("watch/providers");
+        JSONObject res = wp == null ? null : wp.optJSONObject("results");
+        JSONObject br = res == null ? null : res.optJSONObject(REGION);
+        for (String type : new String[] {"flatrate", "ads", "free"}) {
+            JSONArray list = br == null ? null : br.optJSONArray(type);
+            for (int i = 0; list != null && i < list.length(); i++) {
+                String[] s = service(list.optJSONObject(i).optString("provider_name"), list.optJSONObject(i).optInt("provider_id"));
+                if (s != null && installed(s[2])) return s[2];
+            }
+        }
+        return null;
     }
 
     /** Genre, runtime (or seasons) and the service it's on, among the ones the TV has. */

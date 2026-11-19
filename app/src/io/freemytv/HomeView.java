@@ -6168,7 +6168,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawServiceAndGenre(Canvas c, RectF card, Recs.Pick p, boolean genreBadge) {
-        drawServiceIcon(c, card, p.app != null ? (p.servicePkg != null ? p.servicePkg : p.pkg) : null);   // a pick going to Nuvio has the TV's app in servicePkg
+        // a pick going to Nuvio or Stremio has the TV's app in servicePkg; with none known, no icon (never Nuvio's own)
+        boolean via = "nuvio".equals(p.app) || "stremio".equals(p.app);
+        drawServiceIcon(c, card, p.servicePkg != null ? p.servicePkg : via ? null : p.app != null ? p.pkg : null);
         if (!genreBadge) return;   // a genre row is that genre already
         if (p.genre == null || p.genre.isEmpty()) return;
         String g = genreShort.get(p.genre);
