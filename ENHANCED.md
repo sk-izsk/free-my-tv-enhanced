@@ -134,7 +134,7 @@ English text for the rest (the app already shows English for a missing key).
 | Status icons | Home Settings → Status icons On | The Wi-Fi (or Ethernet) icon shows after the time; off, no icon (it is off by default) |
 | Settings survive | Install over the old build | Folders, shelf order and Home Settings are still there |
 
-**3. Performance** (`perf-check.sh`): a feature must not make the home screen slower. It presses the same keys every run
+**3. Performance** (`perf-check.sh`): a feature must not make the home screen slower. If it does, find the reason (the same run with the feature on and off, then the code it adds to the draw path), then offer an alternative that keeps the numbers the same or better, and measure that too: a slower build is not shipped. It presses the same keys every run
 (across the picks, the shelf and the Continue Watching row) and prints the janky-frame percentage, the 50th, 90th,
 95th and 99th percentile frame times and the home process's memory:
 ```bash
