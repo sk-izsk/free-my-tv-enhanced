@@ -6049,6 +6049,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // [custom] The genre and the streaming app are on the card now (drawServiceAndGenre), so this line keeps only the
         // reason: a thumb and the loved title ("Because you loved …" in the details), inside the card's own width. A title
         // that doesn't fit scrolls: after 1.5 s, to its end, rests 2 s, and again from the start while the card has focus.
+        if (f < 0.02f && marqueePick == p) marqueePick = null;   // left the card: the next focus starts over
         if (f < 0.02f || p.tag == null || p.tag.isEmpty()) return;
         boolean thumb = p.loved != null && !p.loved.isEmpty();
         String full = thumb ? p.loved : p.tag;
@@ -6067,7 +6068,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             long t = (now - marqueeT0) % period - 1500;
             c.save();
             c.clipRect(left, y - 60 * k, base.right, y + 20 * k);
-            if (t > 0 && t < dur) {
+            if (t >= 0 && t < dur) {
                 float u = (float) t / dur;
                 c.drawText(full, left - travel * u * u * (3 - 2 * u), y, lCardMeta);   // eased: no jolt at either end
                 marqueeOn = true;   // moving: a frame per refresh
@@ -6078,7 +6079,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     fitPaint.set(lCardMeta);
                     c.drawText(TextUtils.ellipsize(full, fitPaint, room, TextUtils.TruncateAt.END).toString(), left, y, lCardMeta);
                 }
-                long next = t < 0 ? -t : period - t;   // ms to the next move
+                long next = t < 0 ? -t : period - 1500 - t;   // ms to the next move, or to the cycle's wrap during the end rest
                 removeCallbacks(marqueeWake);
                 postDelayed(marqueeWake, Math.max(16, next));   // nothing moves until then: no frames, one wake
             }

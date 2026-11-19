@@ -25,6 +25,7 @@ final class ServiceIcons {
 
     private static final Map<String, Bitmap> CACHE = new ConcurrentHashMap<>();
     private static final Set<String> ASKED = ConcurrentHashMap.newKeySet();   // loading, loaded or failed: asked once
+    private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();   // a logo that couldn't be fetched (offline): asked again after a minute
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
     private static final ExecutorService NET = Executors.newSingleThreadExecutor();   // TMDB's logos: a slow server never holds the app icons
 
@@ -33,7 +34,10 @@ final class ServiceIcons {
         if (pkg == null || px <= 0) return null;
         final String key = pkg + "@" + px;
         Bitmap b = CACHE.get(key);
-        if (b != null || !ASKED.add(key)) return b;
+        if (b != null) return b;
+        Long failed = FAILED.get(key);
+        if (failed != null && System.currentTimeMillis() - failed > 60_000 && FAILED.remove(key, failed)) ASKED.remove(key);   // [custom] retry
+        if (!ASKED.add(key)) return null;
         final Context app = c.getApplicationContext();
         (pkg.startsWith("tmdb:") ? NET : IO).execute(() -> {
             try {
@@ -49,6 +53,7 @@ final class ServiceIcons {
                 CACHE.put(key, out);
                 if (onLoaded != null) onLoaded.run();
             } catch (Exception e) {   // not installed, or no icon: no logo on the card
+                if (pkg.startsWith("tmdb:")) FAILED.put(key, System.currentTimeMillis());   // the network may be back soon
                 AppLog.w("service icon " + pkg + ": " + e.getMessage());
             }
         });
@@ -61,16 +66,25 @@ final class ServiceIcons {
         java.io.File f = new java.io.File(dir, path.replaceAll("[^A-Za-z0-9.]", "_"));
         if (!f.exists()) {
             dir.mkdirs();
+            java.io.File part = new java.io.File(dir, f.getName() + ".part");   // published only once it is complete and a picture
             java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL("https://image.tmdb.org/t/p/w92" + path).openConnection();
             h.setConnectTimeout(8000);
             h.setReadTimeout(8000);
-            try (java.io.InputStream in = h.getInputStream(); java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
-                byte[] buf = new byte[4096];
-                int n;
-                long total = 0;
-                while ((n = in.read(buf)) > 0 && (total += n) < 200_000) out.write(buf, 0, n);
+            try {
+                try (java.io.InputStream in = h.getInputStream(); java.io.FileOutputStream out = new java.io.FileOutputStream(part)) {
+                    byte[] buf = new byte[4096];
+                    int n;
+                    long total = 0;
+                    while ((n = in.read(buf)) > 0) {
+                        if ((total += n) > 200_000) throw new java.io.IOException("logo too large");
+                        out.write(buf, 0, n);
+                    }
+                }
+                if (android.graphics.BitmapFactory.decodeFile(part.getPath()) == null) throw new java.io.IOException("not an image");
+                if (!part.renameTo(f)) throw new java.io.IOException("couldn't keep the logo");
             } finally {
                 h.disconnect();
+                part.delete();   // gone after the rename; a failed one never stays
             }
         }
         Bitmap b = android.graphics.BitmapFactory.decodeFile(f.getPath());
