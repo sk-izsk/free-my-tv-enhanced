@@ -5019,6 +5019,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         watchTitles = new String[n];
         watchMetas = new String[n];
         watchLeft = new String[n];
+        watchIcon = new String[n];
+        java.util.Set<String> players = new java.util.HashSet<>();   // [custom] the apps that only play
+        for (WatchNext.Item w : watching) if (Recs.isPlayer(getContext(), w.pkg)) players.add(w.pkg);
         watchRight = new String[n];
         watchYear = new String[n];
         TextPaint tp = new TextPaint(lCardTitle), mp = new TextPaint(lCardMeta);
@@ -5032,6 +5035,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             String rate = info == null || info[0] == null || info[0].isEmpty() ? null : info[0];
             watchYear[i] = info == null || info[2] == null || info[2].isEmpty() ? null : info[2];
             watchLeft[i] = len;
+            watchIcon[i] = players.contains(it.pkg) ? WatchInfo.service(it) : it.pkg;   // [custom] Nuvio only plays: the owner's icon, or none
             watchRight[i] = rate;
             watchTitles[i] = TextUtils.ellipsize(it.title, tp, width, TextUtils.TruncateAt.END).toString();
             StringBuilder meta = new StringBuilder(it.app == null ? "" : it.app);
@@ -5161,7 +5165,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawBadge(c, cell, watchLeft[i], false, false, 0);   // [custom]
         drawBadge(c, cell, watchRight[i], true, false, 0);
         drawBadge(c, cell, watchYear[i], false, true, progress >= 0 ? 16 * k * s : 0);   // above the progress bar
-        drawServiceIcon(c, cell, it.pkg);   // [custom] the app that left the card
+        drawServiceIcon(c, cell, watchIcon != null && i < watchIcon.length ? watchIcon[i] : null);   // [custom] the service, not the player
         c.drawText(watchTitles[i], textLeft, textTop + 46 * k, lCardTitle);
         if (watchMetas[i].isEmpty()) return;
         if (!tallCard) {
@@ -6151,6 +6155,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private final RectF badge = new RectF();
+    private String[] watchIcon;   // [custom] each Continue Watching card's icon app
 
     // [custom] A pick's streaming app and genre on the card: the app's own icon under the length badge (top left), the genre
     // as a badge at the bottom right (the year's other corner).

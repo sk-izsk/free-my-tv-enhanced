@@ -1307,6 +1307,15 @@ final class Recs {
         return HomeApps.launchIntent(context.getPackageManager(), pkg) != null;
     }
 
+    /** [custom] Nuvio, its forks and Stremio are players, not owners of what they play: their cards show the service's icon. */
+    static boolean isPlayer(Context c, String pkg) {
+        if (pkg == null) return false;
+        if (pkg.equals(STREMIO)) return true;
+        for (String n : NUVIO) if (n.equals(pkg)) return true;
+        for (String[] a : OpenWith.candidates(c)) if (a[0].equals(pkg)) return true;
+        return false;
+    }
+
     private boolean stremio() {
         return Config.OPEN_IN_STREMIO && HomeApps.launchIntent(context.getPackageManager(), STREMIO) != null;
     }
@@ -1425,7 +1434,7 @@ final class Recs {
      * "1h 46m" or "3 seasons", "2022"), or null when nothing matches. A show is looked up first when `show`, else a
      * movie first. Two small requests; WatchInfo caches the answer, so a title is looked up once.
      */
-    static String[] titleBadges(String title, boolean show) throws IOException, org.json.JSONException {
+    static String[] titleBadges(Context c, String title, boolean show) throws IOException, org.json.JSONException {
         String key = key();
         if (key.isEmpty() || title == null || title.trim().isEmpty()) return null;
         for (int pass = 0; pass < 2; pass++) {
@@ -1444,17 +1453,21 @@ final class Recs {
             int id = o.optInt("id");
             String date = o.optString(tv ? "first_air_date" : "release_date", "");
             String year = date.length() >= 4 && !"null".equals(date) ? date.substring(0, 4) : null;
-            String length;
+            String length, service;
             if (tv) {
-                JSONObject d = request("/tv/" + id + "?language=" + lang(), key);
+                JSONObject d = request("/tv/" + id + "?language=" + lang() + "&append_to_response=watch/providers", key);
+                service = get(c).installedService(d);
                 length = seasons(d.optInt("number_of_seasons"));
                 if (length == null) length = Ui.tr("Series");
                 if (year != null) year = yearSpan(year, d.optString("last_air_date", ""));
             } else {
-                length = runtime(request("/movie/" + id + "?language=" + lang(), key).optInt("runtime"));
+                JSONObject d = request("/movie/" + id + "?language=" + lang() + "&append_to_response=watch/providers", key);
+                service = get(c).installedService(d);
+                length = runtime(d.optInt("runtime"));
             }
             // + the kind and TMDB id: a card's Open with links the title in Nuvio (nuvioLink) like a pick's
-            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year, tv ? "tv" : "movie", String.valueOf(id)};
+            return new String[] {ratingText(o.optDouble("vote_average", 0)), length, year, tv ? "tv" : "movie", String.valueOf(id),
+                    service == null ? "" : service};   // [custom] the TV's app that carries it (Continue Watching's icon when the card is from a player)
         }
         return null;
     }
