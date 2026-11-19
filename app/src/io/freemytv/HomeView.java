@@ -25,6 +25,7 @@ import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -1112,7 +1113,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (glassEasing) scene.setGlassMix(tintMix.value);
         }
         if (topMoving) status.invalidate();
-        heroMoving |= topMoving | cardsMoving;
+        heroMoving |= topMoving | cardsMoving | marqueeOn;
+        marqueeOn = false;   // [custom] the next draw says again
         boolean drawerItemsMoving = step(drawerFocus, dt);
         boolean gridMoving = step(gridFocus, dt) | scroll.step(dt);
         boolean drawerMoving = drawer.step(dt);
@@ -5159,6 +5161,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawBadge(c, cell, watchLeft[i], false, false, 0);   // [custom]
         drawBadge(c, cell, watchRight[i], true, false, 0);
         drawBadge(c, cell, watchYear[i], false, true, progress >= 0 ? 16 * k * s : 0);   // above the progress bar
+        drawServiceIcon(c, cell, it.pkg);   // [custom] the app that left the card
         c.drawText(watchTitles[i], textLeft, textTop + 46 * k, lCardTitle);
         if (watchMetas[i].isEmpty()) return;
         if (!tallCard) {
@@ -5434,6 +5437,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             float f = Ui.clamp(genreFocus[r][i].value);
             drawBadges(c, cell, p);
+            drawServiceAndGenre(c, cell, p, false);   // [custom]
             fitPaint.set(lCardMeta);
             int a = lCardMeta.getAlpha();
             lCardMeta.setColor(blend(tone(L_DIM, 0xFF98989D), tone(L_INK, WHITE), f));
@@ -6037,16 +6041,80 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * right edge it ends at the card's right instead, so it's never cut.
      */
     private void drawHighlightMeta(Canvas c, Recs.Pick p, RectF base, float f) {
-        if (f < 0.02f || p.meta == null || p.meta.isEmpty()) return;
-        fitPaint.set(lCardMeta);
-        float room = Math.min(CONTENT_R * k - MARGIN * k, Math.max(base.width(), CONTENT_R * k - base.left));
-        String text = TextUtils.ellipsize(p.meta, fitPaint, room, TextUtils.TruncateAt.END).toString();
-        float tw = lCardMeta.measureText(text);
-        float x = base.left + tw <= CONTENT_R * k ? base.left : Math.max(MARGIN * k, base.right - tw);
+        // [custom] The genre and the streaming app are on the card now (drawServiceAndGenre), so this line keeps only the
+        // reason: a thumb and the loved title ("Because you loved …" in the details), inside the card's own width. A title
+        // that doesn't fit scrolls: after 1.5 s, to its end, rests 2 s, and again from the start while the card has focus.
+        if (f < 0.02f || p.tag == null || p.tag.isEmpty()) return;
+        boolean thumb = p.loved != null && !p.loved.isEmpty();
+        String full = thumb ? p.loved : p.tag;
+        float icon = thumb ? 26 * k : 0, gap = thumb ? 10 * k : 0;
+        float left = base.left + icon + gap, room = base.width() - icon - gap;
+        float width = lCardMeta.measureText(full);
         int a = lCardMeta.getAlpha();
         lCardMeta.setAlpha(Math.round(a * f));
-        c.drawText(text, x, base.bottom + 80 * k, lCardMeta);
+        float y = base.bottom + 80 * k;
+        if (thumb) drawThumb(c, base.left, y - Ui.halfCap(lCardMeta), icon, lCardMeta.getColor());
+        long now = SystemClock.uptimeMillis();
+        if (f > 0.5f && marqueePick != p) { marqueePick = p; marqueeT0 = now; }
+        float travel = width - room;
+        if (travel > 0 && f > 0.9f && marqueePick == p) {
+            long dur = Math.max(1800, (long) (travel / (60 * k) * 1000)), period = 1500 + dur + 2000;   // 60 px/s, but never under 1.8 s: a short overflow would twitch
+            long t = (now - marqueeT0) % period - 1500;
+            c.save();
+            c.clipRect(left, y - 60 * k, base.right, y + 20 * k);
+            if (t > 0 && t < dur) {
+                float u = (float) t / dur;
+                c.drawText(full, left - travel * u * u * (3 - 2 * u), y, lCardMeta);   // eased: no jolt at either end
+                marqueeOn = true;   // moving: a frame per refresh
+            } else {
+                if (t >= dur) {
+                    c.drawText(full, left - travel, y, lCardMeta);
+                } else {
+                    fitPaint.set(lCardMeta);
+                    c.drawText(TextUtils.ellipsize(full, fitPaint, room, TextUtils.TruncateAt.END).toString(), left, y, lCardMeta);
+                }
+                long next = t < 0 ? -t : period - t;   // ms to the next move
+                removeCallbacks(marqueeWake);
+                postDelayed(marqueeWake, Math.max(16, next));   // nothing moves until then: no frames, one wake
+            }
+            c.restore();
+        } else {
+            fitPaint.set(lCardMeta);
+            String text = TextUtils.ellipsize(full, fitPaint, room, TextUtils.TruncateAt.END).toString();
+            float tw = lCardMeta.measureText(text);
+            float x = left + tw <= CONTENT_R * k ? left : Math.max(MARGIN * k + icon + gap, base.right - tw);
+            c.drawText(text, x, y, lCardMeta);
+        }
         lCardMeta.setAlpha(a);
+    }
+
+    private Recs.Pick marqueePick;   // [custom] the pick whose reason line scrolls
+    private long marqueeT0;
+    private boolean marqueeOn;       // set while drawing: the frame loop keeps running while the line moves
+    private final Runnable marqueeWake = () -> { heroDirty = true; wake(); };
+
+    // [custom] A thumbs-up in the text's own colour (dark on the light look, white at night), drawn as a path: no image.
+    private static final float[][] THUMB = {{1, 9}, {5, 9}, {5, 21}, {1, 21}};
+    private static final float[][] HAND = {{7, 9}, {14.2f, 1.2f}, {15.2f, 4.4f}, {14, 8}, {21, 8}, {23, 10}, {23, 12},
+            {20, 19.5f}, {18, 21}, {9, 21}, {7, 19}};
+    private final Paint thumbPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path thumbPath = new Path();
+
+    private void drawThumb(Canvas c, float left, float cy, float size, int color) {
+        if (thumbPath.isEmpty()) {
+            for (float[][] poly : new float[][][] {THUMB, HAND}) {
+                thumbPath.moveTo(poly[0][0], poly[0][1]);
+                for (int i = 1; i < poly.length; i++) thumbPath.lineTo(poly[i][0], poly[i][1]);
+                thumbPath.close();
+            }
+            thumbPaint.setPathEffect(new android.graphics.CornerPathEffect(1.3f));
+        }
+        thumbPaint.setColor(color);
+        c.save();
+        c.translate(left, cy - size / 2);
+        c.scale(size / 24f, size / 24f);
+        c.drawPath(thumbPath, thumbPaint);
+        c.restore();
     }
 
     /**
@@ -6083,6 +6151,46 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private final RectF badge = new RectF();
+
+    // [custom] A pick's streaming app and genre on the card: the app's own icon under the length badge (top left), the genre
+    // as a badge at the bottom right (the year's other corner).
+    private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final RectF iconRect = new RectF();
+    private final Map<String, String> genreShort = new HashMap<>();
+    private final Runnable iconsLoaded = this::onIconsLoaded;
+
+    private void onIconsLoaded() {   // an icon came in, on the loader's thread
+        post(() -> {
+            heroDirty = true;
+            heroLayer.invalidate();
+            wake();
+        });
+    }
+
+    private void drawServiceAndGenre(Canvas c, RectF card, Recs.Pick p, boolean genreBadge) {
+        drawServiceIcon(c, card, p.app != null ? (p.servicePkg != null ? p.servicePkg : p.pkg) : null);   // a pick going to Nuvio has the TV's app in servicePkg
+        if (!genreBadge) return;   // a genre row is that genre already
+        if (p.genre == null || p.genre.isEmpty()) return;
+        String g = genreShort.get(p.genre);
+        if (g == null) {   // "Action & Adventure" → "Action": a corner badge is short, and the year is at its other side
+            int cut = p.genre.indexOf(" & ");
+            if (cut < 0) cut = p.genre.indexOf('/');
+            g = (cut > 0 ? p.genre.substring(0, cut) : p.genre).trim();
+            if (g.length() > 14) g = g.substring(0, 13).trim() + "…";
+            genreShort.put(p.genre, g);
+        }
+        drawBadge(c, card, g, true, true, 0);
+    }
+
+    /** The app's own icon under the length badge (top left); nothing while it loads or when the app has none. */
+    private void drawServiceIcon(Canvas c, RectF card, String pkg) {
+        if (pkg == null) return;
+        Bitmap icon = ServiceIcons.get(getContext(), pkg, Math.round(44 * k), iconsLoaded);
+        if (icon == null) return;
+        float left = card.left + 12 * k, top = card.top + 12 * k + 34 * k + 8 * k;
+        iconRect.set(left, top, left + icon.getWidth(), top + icon.getHeight());
+        c.drawBitmap(icon, null, iconRect, iconPaint);
+    }
 
     private void drawCardRing(Canvas c, RectF card, float radius, float f) {
         float gap = 7 * k, width = 5 * k;
@@ -6183,7 +6291,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setAlpha(255);
             c.restore();
         }
-        if (p != null) drawBadges(c, cell, p);   // [custom]
+        if (p != null) {   // [custom]
+            drawBadges(c, cell, p);
+            drawServiceAndGenre(c, cell, p, true);
+        }
         // The cards peeking in at the sides show only their image: their text would start off screen.
         if (p == null || base.left < 0 || base.left > (CONTENT_R - 100) * k) return;
         fitPaint.set(lCardTitle);

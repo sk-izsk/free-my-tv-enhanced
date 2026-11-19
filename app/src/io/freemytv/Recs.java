@@ -58,6 +58,8 @@ final class Recs {
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
         String rating;          // [custom] TMDB's average as "★ 7.6" (the card's badge), or null
+        String loved;           // [custom] the loved title this pick comes from ("Because you loved …"): the card shows a thumb and the title
+        String genre;           // [custom] the title's first genre ("Horror"): the card's bottom-right badge, or null
         String length, year;    // [custom] badges too: "1h 46m" / "3 seasons" (top left), "2022" (bottom left), or null
         boolean span;           // [custom] year made with a show's last year ("2022–26"); saved lists from before lack it
     }
@@ -83,7 +85,7 @@ final class Recs {
     /** How often Trakt is asked whether the account changed (marked watched, the watchlist): one small request. */
     private static final long TRAKT_EVERY = 10 * 60_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 7;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span
+    private static final int CACHE_VERSION = 9;   // 6: lists of up to POOL + TRAKT_MAX; [custom] 7: shows' year span, 8: the genre badge, 9: the loved title
     /** TMDB's titles in the list (trending, then the new releases), as on main. */
     private static final int POOL = 24;
     /** Trakt's titles in the list: about what the tabs show of them (now(): up to 2 in 5 in progress, 3 in 5 liked). */
@@ -909,6 +911,7 @@ final class Recs {
                 String k = key(p);
                 if (notForMe.contains(k) || watched.contains(k) || loved.contains(k)) continue;
                 p.tag = Ui.trf("Because you loved {title}", "title", title);
+                p.loved = title;
                 p.mine = LIKED;   // with Trakt's watchlist: up to 3 in 5 cards, ahead of TMDB's (now())
                 try {
                     if (!reuse(p, known)) fetchDetails(p);
@@ -1028,6 +1031,7 @@ final class Recs {
         p.rating = k.rating;   // [custom]
         p.length = k.length;
         p.year = k.year;
+        p.genre = k.genre;   // [custom]
         p.span = k.span;   // [custom]
         p.backdrop = k.backdrop;
         p.poster = k.poster;
@@ -1149,6 +1153,7 @@ final class Recs {
         if (genres != null && genres.length() > 0) {   // [custom] "Series", the length and the year are badges now
             String name = genres.getJSONObject(0).optString("name");
             parts.add(genre(name));
+            p.genre = genre(name);   // [custom] also on its own: the card's bottom-right badge
         }
         String length = p.kind.equals("movie") ? runtime(o.optInt("runtime")) : seasons(o.optInt("number_of_seasons"));
         p.length = length != null ? length : p.kind.equals("tv") ? Ui.tr("Series") : null;   // [custom] badges
@@ -1672,9 +1677,10 @@ final class Recs {
                         .put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
                         .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
-                        .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine).put("detailed", p.detailed)
+                        .put("tag", p.tag == null ? "" : p.tag).put("loved", p.loved == null ? "" : p.loved).put("mine", p.mine).put("detailed", p.detailed)
                         .put("rating", p.rating == null ? "" : p.rating)   // [custom]
-                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year).put("span", p.span));
+                        .put("length", p.length == null ? "" : p.length).put("year", p.year == null ? "" : p.year).put("span", p.span)
+                        .put("genre", p.genre == null ? "" : p.genre));   // [custom]
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("traktActivity", traktActivity).putLong("traktStamp", traktStamp)
@@ -1706,12 +1712,14 @@ final class Recs {
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.servicePkg = o.optString("servicePkg").isEmpty() ? null : o.optString("servicePkg");
             p.tag = o.optString("tag").isEmpty() ? null : o.optString("tag");
+        p.loved = o.optString("loved").isEmpty() ? null : o.optString("loved");
             p.mine = o.optInt("mine");
             p.detailed = o.optBoolean("detailed");
             p.rating = o.optString("rating").isEmpty() ? null : o.optString("rating");   // [custom]
             p.length = o.optString("length").isEmpty() ? null : o.optString("length");
             p.year = o.optString("year").isEmpty() ? null : o.optString("year");
             p.span = o.optBoolean("span");   // [custom]
+            p.genre = o.optString("genre").isEmpty() ? null : o.optString("genre");   // [custom]
             out.add(p);
         }
         return out;
