@@ -5,7 +5,7 @@ for Google TV and Android TV, by iZsk. Everything the original does still works 
 `io.freemytv`, so it installs over a Free My TV build signed with the same key. Only the Google TV / Android TV app
 has the additions (the LG and Samsung web app is the original's).
 
-**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.3 · based
+**Version:** Enhanced has its own numbers, starting at **1.0.0**. Settings shows *Free My TV Enhanced 1.0.4 · based
 on Free My TV*.
 
 ## What's new compared with Free My TV
@@ -13,7 +13,7 @@ on Free My TV*.
 | Area | Free My TV | Enhanced adds |
 |---|---|---|
 | **Picks (cards at the top)** | Trending titles on your services | Up to 7 cards per tab; a *Highlight* focus (the card pops up, no ring; Picks → Card focus); badges on each card: runtime or seasons, TMDB rating, and the year (a show's span, such as *2022–26*) |
-| **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card for *Love it* / *Not for me* |
+| **Suggestions** | Trending only | *Your taste*: TMDB recommendations from the genres and titles you like. Hold OK on a card (a pick or a genre row's) for *Love it* / *Not for me*. *Love it* keeps the card where it is; the *Because you loved …* picks come with the next refresh (every 6 hours, or when the time of day changes). *Not for me* takes the card off at once |
 | **Open picks with** | The service's app | Any app that opens `nuvio://tmdb/...` links (Nuvio and its forks). With two or more, OK asks which one. A *Continue Watching* card asks the same way: its own app first, then these apps. With no TMDB match for the title there is no title link: the chooser is headed *Open with (search manually)* and the other apps open at their home, so you search the title there |
 | **Rows under the shelf** | – | *Continue Watching* as its own row, with the picks' badges (length, rating, year) on each card (on top it uses the picks' tall cards); up to three *genre rows* (popular titles of a genre on your services) |
 | **Title line** | – | The time and the weather (icon colored by the conditions) next to the picks' title, laid out on the time's height: the icon and degrees on the middle line (the Wi-Fi icon's), the condition starting at the top of the digits, the day's high and low on their baseline in the unselected tabs' grey |
@@ -120,6 +120,7 @@ English text for the rest (the app already shows English for a missing key).
 | Picks, badges | Home screen, move across the cards | Each card shows length (top left), rating (top right), year (bottom left); a show's span like *2022–25* |
 | Card focus | Move the focus onto a card | It pops up with a deeper shadow: no ring, no outline |
 | Weather | Look at the top line | Icon colored by the conditions; the text in the time's color; the condition at the top of the time's digits and the day's high and low (*H:12°  L:5°*) on their baseline, in the grey of the unselected tabs; the drawer's weather card unchanged |
+| Love it / Not for me | Hold OK on a pick (Suggestions: Your taste) | *Love it*: a toast, and the card stays in the list. *Not for me*: the card goes at once |
 | Open picks with | OK on a pick | A panel: the apps from Picks → Open picks with, then Cancel |
 | Continue Watching row | Down from the shelf, move across | Cards with the same three badges (where TMDB knows the title) |
 | Continue Watching on top | Home Settings → Top of the screen → Continue Watching | Tall cards, the size of the picks' cards, five across, with the poster and the same badges; the row under the shelf is hidden |
