@@ -66,6 +66,7 @@ final class RecentApps {
         Paint paint;                 // the card's art as a shader, made once
         int glow;                    // the art's average color
         RadialGradient glowShader;   // the glow behind it, made with the paint
+        boolean checked;             // neededByTv answered for it
         boolean stoppable;           // ▲ may close it (HomeMode.mayStop, not an accessibility service's app or the keyboard, nor neededByTv)
         final Spring gone = new Spring(0.28f, 0.9f, 0);
         boolean closing;
@@ -194,15 +195,20 @@ final class RecentApps {
             for (Card c : found) shade(c);
             // As before anything goes off: what the TV's inputs or the remote's Input key need stays (a force-stopped
             // app gets nothing until it's opened again). Not checked: none of them closes this time.
-            Set<String> closable = new HashSet<>();
-            for (Card c : found) if (c.stoppable) closable.add(c.item.pkg);
-            Set<String> needed;
-            try {
-                needed = closable.isEmpty() ? closable : HomeMode.neededByTv(adb, closable);
-            } catch (IOException e) {
-                needed = null;
+            // [custom] One app at a time: a slow TV timing out, or one package dumpsys doesn't know, left every card without ▲
+            // when the check was a single answer for all of them. What couldn't be checked stays open (not closable).
+            for (Card c : found) {
+                if (!c.stoppable) continue;
+                try {
+                    Set<String> needed = HomeMode.neededByTv(adb, java.util.Collections.singleton(c.item.pkg));
+                    if (needed == null || !needed.isEmpty()) c.stoppable = false;
+                } catch (IOException e) {
+                    AppLog.w("recent apps: couldn't check " + c.item.pkg + ": " + e);
+                    for (Card rest : found) if (!rest.checked) rest.stoppable = false;   // the connection is likely gone
+                    break;
+                }
+                c.checked = true;
             }
-            for (Card c : found) if (needed == null || needed.contains(c.item.pkg)) c.stoppable = false;
         } catch (IOException | RuntimeException e) {   // a crash here would take the home screen down (and count for the watchdog)
             AppLog.w("recent apps: " + e);
             found.clear();
