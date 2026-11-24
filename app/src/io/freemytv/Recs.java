@@ -62,6 +62,8 @@ final class Recs {
         String loved;           // [custom] the loved title this pick comes from ("Because you loved …"): the card shows a thumb and the title
         String genre;           // [custom] the title's first genre ("Horror"): the card's bottom-right badge, or null
         String length, year;    // [custom] badges too: "1h 46m" / "3 seasons" (top left), "2022" (bottom left), or null
+        String genreFit;        // [custom] the genre as the card shows it beside the year (made once per card width); null: not made yet
+        int genreFitW = -1;
         boolean span;           // [custom] year made with a show's last year ("2022–26"); saved lists from before lack it
     }
 
@@ -1135,7 +1137,7 @@ final class Recs {
         if (lastDate == null || lastDate.length() < 4 || "null".equals(lastDate)) return first;
         String last = lastDate.substring(0, 4);
         if (last.compareTo(first) <= 0) return first;
-        return first + "\u2013" + (last.substring(0, 2).equals(first.substring(0, 2)) ? last.substring(2) : last);
+        return first + "\u2013" + last.substring(2);   // "1997–02", always short: the genre badge shares the card's width
     }
 
     private static String seasons(int n) {

@@ -696,6 +696,7 @@ final class HomeApps {
         }
         items.add(special(c, SETTINGS, "freemytv-settings", "Free My TV Enhanced", "sparkles"));
         // [custom] Folders take their apps' places: the folders first (then the owner's order moves them).
+        if (!seen.isEmpty()) Folders.pruneUninstalled(c);   // [custom] an uninstalled app leaves its folder
         List<Folders.Folder> folders = Folders.all();
         if (!folders.isEmpty()) {
             Set<String> inside = Folders.foldered(folders);
@@ -1297,7 +1298,9 @@ final class HomeApps {
         Bitmap tile = logo != null ? logoTile(logo, brand) : bannerTile(c, pkg);
         if (tile == null) tile = iconTile(c, pkg);
         tile.setHasMipMap(true);
-        TILES.put(cacheKey, tile);
+        // [custom] An app that isn't installed (a folder remembers its apps) gets a blank tile that must not stay cached:
+        // installed again later, its folder showed empty until the 15-minute refresh.
+        if (key != null || installed(c, pkg)) TILES.put(cacheKey, tile);
         return tile;
     }
 
@@ -1327,6 +1330,15 @@ final class HomeApps {
     }
 
     /** No banner: the app's icon (in its proper shape, with some margin) on a dark card. */
+    static boolean installed(Context c, String pkg) {   // [custom]
+        try {
+            c.getPackageManager().getApplicationInfo(pkg, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
     private static Bitmap iconTile(Context c, String pkg) {
         Drawable icon = null;
         try {
