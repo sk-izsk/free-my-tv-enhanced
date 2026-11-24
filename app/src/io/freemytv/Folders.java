@@ -102,6 +102,19 @@ final class Folders {
         save(folders);
     }
 
+    /**
+     * An app that was uninstalled leaves its folder, so installed again it shows in All Apps (and goes back into a folder
+     * only when the owner puts it there). A folder left empty goes.
+     */
+    static void pruneUninstalled(Context c) {
+        List<Folder> folders = all();
+        boolean changed = false;
+        for (Folder f : folders) changed |= f.apps.removeIf(p -> !HomeApps.installed(c, p));
+        if (!changed) return;
+        folders.removeIf(f -> f.apps.isEmpty());
+        save(folders);
+    }
+
     /** Takes `pkg` out of its folder; a folder left empty goes. */
     static void remove(String pkg) {
         List<Folder> folders = all();
@@ -133,10 +146,13 @@ final class Folders {
         canvas.drawRect(0, 0, w, h, p);
         float pad = 18, gap = 12, cw = (w - 2 * pad - gap) / 2f, ch = (h - 2 * pad - gap) / 2f;
         RectF cell = new RectF();
-        for (int i = 0; i < Math.min(4, f.apps.size()); i++) {
+        int shown = 0;   // [custom] apps that aren't installed any more leave no blank square
+        for (int i = 0; i < f.apps.size() && shown < 4; i++) {
+            if (!HomeApps.installed(c, f.apps.get(i))) continue;
             Bitmap t = HomeApps.tileFor(c, f.apps.get(i));
             if (t == null) continue;
-            float x = pad + (i % 2) * (cw + gap), y = pad + (i / 2) * (ch + gap);
+            int slot = shown++;
+            float x = pad + (slot % 2) * (cw + gap), y = pad + (slot / 2) * (ch + gap);
             cell.set(x, y, x + cw, y + ch);
             canvas.save();
             android.graphics.Path round = new android.graphics.Path();

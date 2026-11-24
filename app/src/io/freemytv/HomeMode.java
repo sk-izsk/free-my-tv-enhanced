@@ -269,6 +269,45 @@ final class HomeMode {
         return mayTurnOff(pkg) || AMAZON_APPS.contains(pkg) && !PROTECTED.contains(pkg);
     }
 
+    /**
+     * [custom] Uninstall (the only place the app removes one): only an app the owner installed, never a system app, an
+     * updated system app, this app, or a package {@link #mayTurnOff} refuses. The home screen asks the owner on the TV first.
+     */
+    static boolean mayUninstall(Context c, String pkg) {
+        if (pkg == null || !pkg.matches("[A-Za-z][\\w.]*") || pkg.equals(c.getPackageName()) || !mayTurnOff(pkg)) return false;
+        try {
+            int flags = c.getPackageManager().getApplicationInfo(pkg, 0).flags;
+            return (flags & (android.content.pm.ApplicationInfo.FLAG_SYSTEM | android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0;
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    /**
+     * [custom] Uninstalls what {@link #mayUninstall} allows, through the TV's own ADB (`pm uninstall`); returns the
+     * packages that went. An app that saved a Wi-Fi network stays, as for a turn off: Android would delete the network.
+     * When the Wi-Fi service doesn't answer, nothing goes. Call off the UI thread.
+     */
+    static List<String> uninstall(Context c, List<String> pkgs) {
+        List<String> done = new ArrayList<>();
+        try (Adb adb = Adb.connect(c.getApplicationContext(), 10_000, null)) {
+            Set<String> owners = wifiOwners(adb);
+            for (String pkg : pkgs) {
+                if (!mayUninstall(c, pkg)) continue;
+                if (owners == null || owners.contains(pkg)) {
+                    AppLog.w("uninstall: " + pkg + " kept (Wi-Fi networks saved by it, or the Wi-Fi service didn't answer)");
+                    continue;
+                }
+                String out = adb.shell("pm uninstall " + pkg);
+                if (out.contains("Success")) done.add(pkg);
+                else AppLog.w("uninstall: " + pkg + ": " + out.trim());
+            }
+        } catch (IOException | RuntimeException e) {
+            AppLog.w("uninstall: " + e);
+        }
+        return done;
+    }
+
     /** Checked before every disable: never the protected list, Amazon's packages, Android's own pieces or a factory menu. */
     static boolean mayTurnOff(String pkg) {
         return !PROTECTED.contains(pkg) && !pkg.startsWith("com.amazon.")

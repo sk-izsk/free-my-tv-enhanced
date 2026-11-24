@@ -17,7 +17,8 @@ already have; Continue Watching; weather, a clock and a screensaver; light by da
 uninstalled, and one button brings the factory home screen back.
 
 **Added by Enhanced** (details in [ENHANCED.md](ENHANCED.md)):
-- **Folders** in All Apps, Apple TV style, and **Select several** to move many apps at once
+- **Folders** in All Apps, Apple TV style, and **Select several** to move many apps at once (ticked cards have a blue
+  ring), with **Back** returning to the folder you were in and **Uninstall** for apps you installed (always asks first)
 - **TV Status:** memory, storage, CPU, uptime and network, with Free memory, Clear caches, Restart home screen,
   Reboot TV and a Performance mode switch. It opens over any app with **two quick presses of a remote button you
   choose**.

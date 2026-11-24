@@ -48,7 +48,9 @@ before you do it, and let them do the taps on the TV.
   check leaves the setup app and the stock home screen for later.
 - Never commit `config.properties`, `*.keystore` or any key.
 - Never uninstall or clear the data of system apps; only `pm disable-user --user 0`, through `HomeMode`, so
-  *Original* can bring it back.
+  *Original* can bring it back. The one exception to uninstalling: an app the owner installed (`HomeMode.mayUninstall`:
+  not `FLAG_SYSTEM`, not an updated system app, not this app, `mayTurnOff`), only after the owner confirms it in the
+  dialog on the TV, never from a script or a background job, and never one that saved a Wi-Fi network (`wifiOwners`).
 - Don't change the TV's picture, sound, network or account settings.
 - Keep the way back working: the *Original* mode and the watchdog.
 - Every Enhanced feature is documented and tested, because upstream knows nothing about it: a row in ENHANCED.md's
